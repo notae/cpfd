@@ -16,7 +16,6 @@ Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
 
 module Control.CPFD
        (
@@ -29,7 +28,7 @@ module Control.CPFD
        , Var
        , Pool
        , newPool
-       , Container (..)
+       , Container (..), List (..)
        , new
        , newL, newT, newTL, newC, newCL
        -- * Constraint Store
@@ -38,7 +37,7 @@ module Control.CPFD
        , ArcPropagator
        , arcConstraint
        -- * Labelling
-       , label
+       , labelC
        -- * Primitive Constraint
        -- ** Core Constraint
        , alldiff
@@ -106,6 +105,13 @@ class Container c where
            (forall a. FDDomain a => t a -> m (t' a)) -> c t -> m (c t')
   cmapM f = unwrapMonad . cmapA (WrapMonad . f)
   toList :: (forall a. FDDomain a => t a -> t') -> c t -> [t']
+
+newtype List v t = List { unList :: [t v] } deriving (Show, Eq)
+
+instance FDDomain v => Container (List v)  where
+  cmap f (List ts) = List $ map f ts
+  cmapA f (List ts) = List <$> traverse f ts
+  toList f (List ts) = map f ts
 
 data NVar s = forall v. FDDomain v => NVar (Var s v)
 
@@ -240,11 +246,11 @@ _pop p = do
   vs <- readSTRef p
   mapM_ __pop vs
 
-label :: Container c => Pool s -> c (Var s) -> FD s [c []]
-label p c = label' p c (toList NVar c)
+labelC :: Container c => Pool s -> c (Var s) -> FD s [c []]
+labelC p c = labelC' p c (toList NVar c)
 
-label' :: Container c => Pool s -> c (Var s) -> [NVar s] -> FD s [c []]
-label' p c nvs =
+labelC' :: Container c => Pool s -> c (Var s) -> [NVar s] -> FD s [c []]
+labelC' p c nvs =
   case nvs of
     []        -> do
       c' <- getCL c
@@ -256,7 +262,7 @@ label' p c nvs =
         _push p
         r <- setS v i
         s <- if r
-             then label' p c nvss
+             then labelC' p c nvss
              else return []
         _pop p
         return s
@@ -456,4 +462,4 @@ testMT = runFD $ do
        PairList [ ([1..3], [True, False])
                 , ([4..5], [True, False]) ]
   forM (unPairList v) $ uncurry mt
-  label p v
+  labelC p v
