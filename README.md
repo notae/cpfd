@@ -1,4 +1,4 @@
 cpfd
 ====
 
-Constraint Programming over Finite Domain
+Constraint Programming over Finite Domain for Haskell
