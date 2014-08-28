@@ -323,7 +323,6 @@ arcConstraint c x y = add2 x y $ do
   rx <- set x dx'
   ry <- set y dy'
   return $ rx && ry
---   return $ traceShow ("arcConstraint", (dx, dy), (dx', dy')) $ rx && ry
 
 -- Primitive constraints
 
