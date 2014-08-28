@@ -51,7 +51,7 @@ cabal-version:       >=1.10
 
 library
   -- Modules exported by the library.
-  exposed-modules:     Control.CP.CPFD
+  exposed-modules:     Control.CPFD
 
   -- Modules included in this library but not exported.
   -- other-modules:

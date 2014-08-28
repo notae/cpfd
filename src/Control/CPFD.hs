@@ -1,5 +1,5 @@
 {-|
-Module      : Control.CP.CPFD
+Module      : Control.CPFD
 Description : Constraint Programming over Finite Domain
 Copyright   : (c) notae@me.com, 2014
 License     : BSD-style
@@ -18,7 +18,7 @@ Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 
-module Control.CP.CPFD
+module Control.CPFD
        (
        -- * Monads
          FD
