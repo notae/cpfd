@@ -53,6 +53,7 @@ library
   -- Modules exported by the library.
   exposed-modules:     Control.CPFD
                      , Control.CPFD.Example.Example
+                     , Control.CPFD.Example.Sudoku
 
   -- Modules included in this library but not exported.
   -- other-modules:

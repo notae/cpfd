@@ -29,15 +29,15 @@ module Control.CPFD
        , Pool
        , newPool
        , Container (..), List (..)
-       , new
-       , newL, newT, newTL, newC, newCL
+       , new, newL, newN, newNL, newT, newTL, newC, newCL
+       , set, setS, setL
        -- * Constraint Store
        , Propagator
        , add, add2, adds
        , ArcPropagator
        , arcConstraint
        -- * Labelling
-       , labelC
+       , labelL, labelC
        -- * Primitive Constraint
        -- ** Core Constraint
        , alldiff
@@ -75,6 +75,7 @@ import Data.Traversable (traverse)
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import qualified Data.Traversable as Traversable
+import Control.Monad (replicateM)
 
 
 -- | Monad for constraints on finite domain
@@ -168,6 +169,12 @@ set (Var vd _ va) d =
 newL :: FDDomain v => Pool s -> [v] -> FD s (Var s v)
 newL p d = new p (Set.fromList d)
 
+newN :: FDDomain v => Pool s -> Int -> Domain v -> FD s [Var s v]
+newN p n d = replicateM n (new p d)
+
+newNL :: FDDomain v => Pool s -> Int -> [v] -> FD s [Var s v]
+newNL p n d = replicateM n (newL p d)
+
 -- | Same as 'new' except to take a Traversable containing domains.
 newT :: (FDDomain v, Traversable t) =>
         Pool s -> t (Domain v) -> FD s (t (Var s v))
@@ -245,6 +252,27 @@ _pop p = do
   vs <- readSTRef p
   mapM_ __pop vs
 
+labelL :: FDDomain v => Pool s -> [Var s v] -> FD s [[v]]
+labelL p l = labelL' p l (map NVar l)
+
+labelL' :: FDDomain v => Pool s -> [Var s v] -> [NVar s] -> FD s [[v]]
+labelL' p l nvs =
+  case nvs of
+    []        -> do
+      l' <- mapM getL l
+      return [map head l']
+    _ -> do
+      (NVar v, nvss) <- deleteFindMin nvs
+      d <- getL v
+      liftM concat $ forM d $ \i -> do
+        _push p
+        r <- setS v i
+        s <- if r
+             then labelL' p l nvss
+             else return []
+        _pop p
+        return s
+
 labelC :: Container c => Pool s -> c (Var s) -> FD s [c []]
 labelC p c = labelC' p c (toList NVar c)
 
@@ -273,7 +301,7 @@ deleteFindMin nvs = do
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
-  let cnvs = map snd $ former ++ (tail latter)
+  let cnvs = map snd $ former ++ tail latter
   return (nvsmin, cnvs)
 
 -- Primitives for variable domain propagator
