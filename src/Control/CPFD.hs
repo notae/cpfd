@@ -56,7 +56,6 @@ module Control.CPFD
        ) where
 
 import Control.Applicative ((<$>))
-import Control.Applicative ((<*>))
 import Control.Applicative (Applicative)
 import Control.Applicative (WrappedMonad (..))
 import Control.Monad (forM)
@@ -359,8 +358,13 @@ alldiff (v:vs) = do
 alldiffF :: (FDDomain v, Foldable f) => f (Var s v) ->FD s Bool
 alldiffF = alldiff . Foldable.toList
 
--- Tests
 
+-- Internal Tests
+
+{-|
+>>> testL
+(fromList [1,2,3,4,5,6,7,8,9,10],fromList [1,2,3,4,5])
+-}
 testL :: (Domain Int, Domain Int)
 testL = runFD $ do
   p <- newPool
@@ -370,6 +374,10 @@ testL = runFD $ do
   val' <- get v
   return (val, val')
 
+{-|
+>>> testTLProp
+(fromList [5,7,9],fromList [5,7,9])
+-}
 testTLProp :: (Domain Int, Domain Int)
 testTLProp = runFD $ do
   p <- newPool
@@ -379,6 +387,10 @@ testTLProp = runFD $ do
   dy <- get y
   return (dx, dy)
 
+{-|
+>>> testAlldiff
+(fromList [1,3,7,9,11],fromList [6,7,8,9,10],fromList [5])
+-}
 testAlldiff :: (Domain Int, Domain Int, Domain Int)
 testAlldiff = runFD $ do
   p <- newPool
@@ -389,6 +401,10 @@ testAlldiff = runFD $ do
   dz <- get z
   return (dx, dy, dz)
 
+{-|
+>>> testProp
+(fromList [5,7,9],fromList [5,7,9])
+-}
 testProp :: (Domain Int, Domain Int)
 testProp = runFD $ do
   p <- newPool
@@ -398,67 +414,3 @@ testProp = runFD $ do
   dx <- get x
   dy <- get y
   return (dx, dy)
-
-{-|
-Example of Constraints with Multiple Type Variables
--}
-mt :: Var s Int -> Var s Bool -> FD s Bool
-mt = arcConstraint mtConstraint
-
-{-|
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True,False])
-(fromList [1,2,3,4,5,6,7,8,9,10],fromList [False,True])
-
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [False])
-(fromList [1,3,5,7,9],fromList [False])
-
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [True,False])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True,False])
-(fromList [1,3,5,7,9],fromList [False])
-
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [False])
-(fromList [],fromList [])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True])
-(fromList [],fromList [])
-
->>> mtConstraint (Set.fromList []) (Set.fromList [True,False])
-(fromList [],fromList [])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [])
-(fromList [],fromList [])
--}
-mtConstraint :: ArcPropagator Int Bool
-mtConstraint vx vy = (vx', vy') where
-  vx' = Set.filter (\x -> (x `mod` 2 == 0) `Set.member` vy) vx
-  vy' = Set.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Set.toList vx]) vy
-
-{-|
-Example of Constraints with Multiple Type Variables in Container
--}
-
-newtype PairList x y t =
-  PairList { unPairList :: [(t x, t y)] }
-  deriving (Show, Eq)
-
-instance (FDDomain x, FDDomain y) =>
-         Container (PairList x y) where
-  cmap f (PairList ps) = PairList $ fmap (\(x, y) -> (f x, f y)) ps
-  cmapA f (PairList ps) =
-    PairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
-  toList f (PairList ps) = concatMap (\(x, y) -> [f x, f y]) ps
-
-{-
-Test for Constraints with Multiple Type Variables in Container
->>> length $ testMT
-6
--}
-testMT :: [PairList Int Bool []]
-testMT = runFD $ do
-  p <- newPool
-  v <- newCL p $
-       PairList [ ([1..3], [True, False])
-                , ([4..5], [True, False]) ]
-  forM (unPairList v) $ uncurry mt
-  labelC p v
