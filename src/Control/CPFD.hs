@@ -253,25 +253,7 @@ _pop p = do
   mapM_ __pop vs
 
 labelL :: FDDomain v => Pool s -> [Var s v] -> FD s [[v]]
-labelL p l = labelL' p l (map NVar l)
-
-labelL' :: FDDomain v => Pool s -> [Var s v] -> [NVar s] -> FD s [[v]]
-labelL' p l nvs =
-  case nvs of
-    []        -> do
-      l' <- mapM getL l
-      return [map head l']
-    _ -> do
-      (NVar v, nvss) <- deleteFindMin nvs
-      d <- getL v
-      liftM concat $ forM d $ \i -> do
-        _push p
-        r <- setS v i
-        s <- if r
-             then labelL' p l nvss
-             else return []
-        _pop p
-        return s
+labelL p l = liftM (map $ map head . unList) $ labelC' p (List l) (map NVar l)
 
 labelC :: Container c => Pool s -> c (Var s) -> FD s [c []]
 labelC p c = labelC' p c (toList NVar c)
