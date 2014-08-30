@@ -21,38 +21,38 @@ module Control.CPFD
        (
        -- * Monads
          FD
-       , runFD
-       -- * Variables
+       , runFD, runFD'
+       -- * Variables and Domains
        , FDDomain
        , Domain
        , Var
        , Pool
        , newPool
-       , Container (..), List (..)
+       , Container (..), CList (..), CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newC, newCL
        , set, setS, setL
        -- * Constraint Store
        , Propagator
-       , add, add2, adds
-       , ArcPropagator
-       , arcConstraint
+--        , add, add2, adds
+       , ArcPropagator, arcConstraint
+       , MultiPropagator, multiConstraint
        -- * Labelling
-       , labelL, labelC
+       , labelL, labelT, labelC
        -- * Primitive Constraint
        -- ** Core Constraint
        , alldiff
        , alldiffF
        -- ** Arithmetic Constraint
        , eq
---        , le
+       , le
        , neq
---        , add
---        , sub
---        , add3
+       , add'
+       , sub
+       , add3
        -- ** Modulo Constraint
---        , eqmod
---        , neqmod
---        , alldiffmod
+       , eqmod
+       , neqmod
+       , alldiffmod
        ) where
 
 import Control.Applicative ((<$>))
@@ -60,6 +60,7 @@ import Control.Applicative (Applicative)
 import Control.Applicative (WrappedMonad (..))
 import Control.Monad (forM)
 import Control.Monad (liftM)
+import Control.Monad (replicateM)
 import Control.Monad.ST (ST)
 import Control.Monad.ST (runST)
 import Data.Foldable (Foldable)
@@ -71,18 +72,21 @@ import Data.STRef (readSTRef)
 import Data.STRef (writeSTRef)
 import Data.Set (Set)
 import Data.Traversable (Traversable)
-import Data.Traversable (traverse)
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import qualified Data.Traversable as Traversable
-import Control.Monad (replicateM)
 
 
 -- | Monad for constraints on finite domain
 type FD = ST
 
+-- | Run FD monad.
 runFD :: (forall s. FD s a) -> a
 runFD = runST
+
+-- | Run FD monad with a prepared Pool
+runFD' :: (forall s. Pool s -> FD s a) -> a
+runFD' fd = runST $ newPool >>= fd
 
 -- | Constraint for domain value
 type FDDomain v = (Ord v, Show v)
@@ -97,6 +101,9 @@ data Var s v =
   , varStack  :: STRef s [Domain v]
   , varAction :: STRef s (ST s Bool) }
 
+-- | (for internal use in pool)
+data NVar s = forall v. FDDomain v => NVar (Var s v)
+
 class Container c where
   cmap :: (forall a. t a -> t' a) -> c t -> c t'
   cmapA :: Applicative f =>
@@ -106,14 +113,23 @@ class Container c where
   cmapM f = unwrapMonad . cmapA (WrapMonad . f)
   toList :: (forall a. FDDomain a => t a -> t') -> c t -> [t']
 
-newtype List v t = List { unList :: [t v] } deriving (Show, Eq)
+-- | (for internal use)
+newtype CList v t = CList { unCList :: [t v] } deriving (Eq, Show)
 
-instance FDDomain v => Container (List v)  where
-  cmap f (List ts) = List $ map f ts
-  cmapA f (List ts) = List <$> traverse f ts
-  toList f (List ts) = map f ts
+instance FDDomain v => Container (CList v)  where
+  cmap f (CList ts) = CList $ map f ts
+  cmapA f (CList ts) = CList <$> Traversable.traverse f ts
+  toList f (CList ts) = map f ts
 
-data NVar s = forall v. FDDomain v => NVar (Var s v)
+-- | (for internal use)
+newtype CTraversable t' v t =
+  CTraversable { unCTraversable :: t' (t v) } deriving (Eq, Show)
+
+instance (FDDomain v, Traversable t') =>
+         Container (CTraversable t' v) where
+  cmap f (CTraversable ts) = CTraversable $ fmap f ts
+  cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
+  toList f (CTraversable ts) = Foldable.toList $ fmap f ts
 
 -- | Variable pool
 type Pool s = STRef s [NVar s]
@@ -169,9 +185,11 @@ set (Var vd _ va) d =
 newL :: FDDomain v => Pool s -> [v] -> FD s (Var s v)
 newL p d = new p (Set.fromList d)
 
+-- | Same as 'new' except to take a number of variables to create.
 newN :: FDDomain v => Pool s -> Int -> Domain v -> FD s [Var s v]
 newN p n d = replicateM n (new p d)
 
+-- | Same as 'newN' except to take a list as domain.
 newNL :: FDDomain v => Pool s -> Int -> [v] -> FD s [Var s v]
 newNL p n d = replicateM n (newL p d)
 
@@ -252,9 +270,15 @@ _pop p = do
   vs <- readSTRef p
   mapM_ __pop vs
 
+-- | Label variables specified in list.
 labelL :: FDDomain v => Pool s -> [Var s v] -> FD s [[v]]
-labelL p l = liftM (map $ map head . unList) $ labelC' p (List l) (map NVar l)
+labelL p l = liftM (map $ map head . unCList) $ labelC' p (CList l) (map NVar l)
 
+-- | Label variables specified in Traversable.
+labelT :: (FDDomain v, Traversable t) => Pool s -> t (Var s v) -> FD s [t v]
+labelT p t = liftM (map $ fmap head . unCTraversable) $ labelC' p (CTraversable t) (Foldable.toList $ fmap NVar t)
+
+-- | Label variables specified in Container.
 labelC :: Container c => Pool s -> c (Var s) -> FD s [c []]
 labelC p c = labelC' p c (toList NVar c)
 
@@ -321,8 +345,10 @@ adds vs p = do
 
 -- Utilities for variable domain propagator
 
+-- | Domain propagator for arc
 type ArcPropagator a b = Domain a -> Domain b -> (Domain a, Domain b)
 
+-- | Create arc constraint from propagator
 arcConstraint :: (FDDomain a, FDDomain b) =>
                  ArcPropagator a b -> Var s a -> Var s b -> FD s Bool
 arcConstraint c x y = add2 x y $ do
@@ -333,8 +359,20 @@ arcConstraint c x y = add2 x y $ do
   ry <- set y dy'
   return $ rx && ry
 
+-- | Domain propagator for multiple-arc
+type MultiPropagator v = [Domain v] -> [Domain v]
+
+-- | Create multiple-arc constraint from propagator
+multiConstraint :: FDDomain v => MultiPropagator v -> [Var s v] -> FD s Bool
+multiConstraint c vs = adds vs $ do
+  ds <- mapM get vs
+  let ds' = c ds
+  rs <- (`mapM` zip vs ds') $ uncurry set
+  return $ and rs
+
 -- Primitive constraints
 
+-- | Equality constraint
 eq :: FDDomain v => Var s v -> Var s v -> FD s Bool
 eq x y = adds [x, y] $ do
   dx <- get x
@@ -344,10 +382,22 @@ eq x y = adds [x, y] $ do
   ry <- set y dz
   return (rx && ry)
 
+-- | Inequality (<=) constraint
+le :: FDDomain v => Var s v -> Var s v -> FD s Bool
+le = arcConstraint leConstraint
+
+leConstraint :: FDDomain v => ArcPropagator v v
+leConstraint vx vy = (vx', vy') where
+  minX = Set.findMin vx
+  maxY = Set.findMax vy
+  vx' = Set.filter (<= maxY) vx
+  vy' = Set.filter (>= minX) vy
+
+-- | Inequality (/=) constraint
 neq :: FDDomain v => Var s v -> Var s v -> FD s Bool
 neq = arcConstraint neqConstraint
 
-neqConstraint :: Ord v => ArcPropagator v v
+neqConstraint :: FDDomain v => ArcPropagator v v
 neqConstraint vx vy
   | single vx && single vy =
     if vx == vy
@@ -367,6 +417,78 @@ alldiff (v:vs) = do
 -- | Differ from each other in Foldable
 alldiffF :: (FDDomain v, Foldable f) => f (Var s v) ->FD s Bool
 alldiffF = alldiff . Foldable.toList
+
+-- | x == y (mod m)
+eqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s Bool
+eqmod m = arcConstraint (eqmodConstraint m)
+
+eqmodConstraint :: Integral v => v -> ArcPropagator v v
+eqmodConstraint m vx vy = (vx', vy') where
+  vmz = Set.map (`mod` m) vx `Set.intersection` Set.map (`mod` m) vy
+  vx' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vx
+  vy' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vy
+
+-- | x /= y (mod m)
+neqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s Bool
+neqmod m = arcConstraint (neqmodConstraint m)
+
+neqmodConstraint :: Integral v => v -> ArcPropagator v v
+neqmodConstraint m vx vy = (vx'', vy'') where
+  vmx = Set.map (`mod` m) vx
+  vmy = Set.map (`mod` m) vy
+  vy' = Set.filter (\e -> (e `mod` m) `Set.notMember` vmx) vy
+  vx' = Set.filter (\e -> (e `mod` m) `Set.notMember` vmy) vx
+  (vx'', vy'')
+    | single vmx && single vmy =
+      if vmx == vmy
+      then (Set.empty, Set.empty)
+      else (vx, vy)
+    | single vmx && vmx `Set.isProperSubsetOf` vmy = (vx, vy')
+    | single vmy && vmy `Set.isProperSubsetOf` vmx = (vx', vy)
+    | otherwise = (vx, vy)
+
+-- | Differ from each other in list (mod m)
+alldiffmod :: (FDDomain v, Integral v) => v -> [Var s v] -> FD s Bool
+alldiffmod _ []     = return True
+alldiffmod m (v:vs) = do
+  mapM_ (neqmod m v) vs
+  alldiffmod m vs
+
+-- | add' c x y means c = x + y (c is constant value)
+add' :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s Bool
+add' c = arcConstraint (addConstraint c)
+
+addConstraint :: (Eq v, Num v) => v -> ArcPropagator v v
+addConstraint c vx vy = (vx', vy') where
+  vx' = Set.filter (\ix -> any (\iy -> ix+iy==c) $ Set.toList vy) vx
+  vy' = Set.filter (\iy -> any (\ix -> ix+iy==c) $ Set.toList vx) vy
+
+-- | add3 z x y means z = x + y
+add3 :: (FDDomain v, Num v) => Var s v -> Var s v -> Var s v -> FD s Bool
+add3 z x y = multiConstraint add3Constraint [x, y, z]
+
+add3Constraint :: (Ord a, Num a) => MultiPropagator a
+add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
+  minZ = Set.findMin vx + Set.findMin vy
+  maxZ = Set.findMax vx + Set.findMax vy
+  vz' = Set.filter (\e -> minZ <= e && e <= maxZ) vz
+  --
+  minX = Set.findMin vz - Set.findMax vy
+  maxX = Set.findMax vz - Set.findMin vy
+  vx' = Set.filter (\e -> minX <= e && e <= maxX) vx
+  --
+  minY = Set.findMin vz - Set.findMax vx
+  maxY = Set.findMax vz - Set.findMin vx
+  vy' = Set.filter (\e -> minY <= e && e <= maxY) vy
+
+-- | sub c x y means x - y == c (c is constant value)
+sub :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s Bool
+sub c = arcConstraint (subConstraint c)
+
+subConstraint :: (Eq a, Num a) => a -> ArcPropagator a a
+subConstraint c vx vy = (vx', vy') where
+  vx' = Set.filter (\ix -> any (\iy -> ix==iy+c) $ Set.toList vy) vx
+  vy' = Set.filter (\iy -> any (\ix -> ix==iy+c) $ Set.toList vx) vy
 
 
 -- Internal Tests

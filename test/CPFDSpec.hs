@@ -11,8 +11,8 @@ spec :: Spec
 spec = do
 
   describe "List#cmap" $ do
-    let cMaybe = List [Just (123::Int), Nothing]
-    let cList  = List [[123], []]
+    let cMaybe = CList [Just (123::Int), Nothing]
+    let cList  = CList [[123], []]
     it "id" $
       cmap id cMaybe `shouldBe` cMaybe
     it "maybeToList" $
