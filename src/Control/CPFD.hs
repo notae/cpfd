@@ -21,13 +21,11 @@ module Control.CPFD
        (
        -- * Monads
          FD
-       , runFD, runFD'
+       , runFD
        -- * Variables and Domains
        , FDDomain
        , Domain
        , Var
-       , Pool
-       , newPool
        , Container (..), CList (..), CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newC, newCL
        , set, setS, setL
@@ -63,6 +61,7 @@ import Control.Monad (liftM)
 import Control.Monad (replicateM)
 import Control.Monad.ST (ST)
 import Control.Monad.ST (runST)
+import Control.Monad.State (StateT)
 import Data.Foldable (Foldable)
 import Data.Maybe (listToMaybe)
 import Data.STRef (STRef)
@@ -75,18 +74,23 @@ import Data.Traversable (Traversable)
 import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
 import qualified Data.Traversable as Traversable
+import Control.Monad.State (evalStateT)
+import Control.Monad.Trans (lift)
+import qualified Control.Monad.State as State
 
 
 -- | Monad for constraints on finite domain
-type FD = ST
+type FD s = StateT (FDState s) (ST s)
 
--- | Run FD monad.
+data FDState s = FDState { varList :: VarList s }
+
+-- | Run FD monad
 runFD :: (forall s. FD s a) -> a
-runFD = runST
-
--- | Run FD monad with a prepared Pool
-runFD' :: (forall s. Pool s -> FD s a) -> a
-runFD' fd = runST $ newPool >>= fd
+runFD fd = runST $ flip evalStateT undefined $ do
+  vl <- newVarList
+  let state = FDState { varList = vl }
+  State.put state
+  fd
 
 -- | Constraint for domain value
 type FDDomain v = (Ord v, Show v)
@@ -99,7 +103,7 @@ data Var s v =
   Var
   { varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
-  , varAction :: STRef s (ST s Bool) }
+  , varAction :: STRef s (FD s Bool) }
 
 -- | (for internal use in pool)
 data NVar s = forall v. FDDomain v => NVar (Var s v)
@@ -131,35 +135,41 @@ instance (FDDomain v, Traversable t') =>
   cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
   toList f (CTraversable ts) = Foldable.toList $ fmap f ts
 
--- | Variable pool
-type Pool s = STRef s [NVar s]
+-- | Variable list
+type VarList s = STRef s [NVar s]
 
--- | Create an empty pool.
-newPool :: FD s (Pool s)
-newPool = newSTRef []
+-- | Create an empty variable list.
+newVarList :: FD s (VarList s)
+newVarList = lift $ newSTRef []
+
+getVarList :: FD s [NVar s]
+getVarList = do
+  FDState vl <- State.get
+  lift $ readSTRef vl
 
 -- | (for debug)
 showNVar :: NVar s -> FD s String
 showNVar (NVar (Var vd vs _)) = do
-  d <- readSTRef vd
-  s <- readSTRef vs
+  d <- lift $ readSTRef vd
+  s <- lift $ readSTRef vs
   return $ show (d, s)
 
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
-new :: FDDomain v => Pool s -> Domain v -> FD s (Var s v)
-new p d = do
-  vd <- newSTRef d
-  vs <- newSTRef []
-  va <- newSTRef $ return True
+new :: FDDomain v => Domain v -> FD s (Var s v)
+new d = do
+  FDState vl <- State.get
+  vd <- lift $ newSTRef d
+  vs <- lift $ newSTRef []
+  va <- lift $ newSTRef $ return True
   let v = Var vd vs va
-  modifySTRef p $ \nvs -> NVar v : nvs
+  lift $ modifySTRef vl $ \nvs -> NVar v : nvs
   return v
 
 -- | Get domain of the variable.
 get :: Var s v -> FD s (Domain v)
-get (Var vd _ _) = readSTRef vd
+get (Var vd _ _) = lift $ readSTRef vd
 
 -- | Set domain of the variable and invoke propagators.
 set :: FDDomain v => Var s v -> Domain v -> FD s Bool
@@ -167,13 +177,13 @@ set (Var vd _ va) d =
   if empty d
   then return False
   else do
-    old <- readSTRef vd
+    old <- lift $ readSTRef vd
     let sd   = Set.size d
     let sold = Set.size old
     if sd < sold
       then do
-        writeSTRef vd d
-        a <- readSTRef va
+        lift $ writeSTRef vd d
+        a <- lift $ readSTRef va
         a
       else if sd == sold
            then return True
@@ -182,34 +192,32 @@ set (Var vd _ va) d =
 -- Utilities for variable domain
 
 -- | Same as 'new' except to take a list as domain.
-newL :: FDDomain v => Pool s -> [v] -> FD s (Var s v)
-newL p d = new p (Set.fromList d)
+newL :: FDDomain v => [v] -> FD s (Var s v)
+newL d = new (Set.fromList d)
 
 -- | Same as 'new' except to take a number of variables to create.
-newN :: FDDomain v => Pool s -> Int -> Domain v -> FD s [Var s v]
-newN p n d = replicateM n (new p d)
+newN :: FDDomain v => Int -> Domain v -> FD s [Var s v]
+newN n d = replicateM n (new d)
 
 -- | Same as 'newN' except to take a list as domain.
-newNL :: FDDomain v => Pool s -> Int -> [v] -> FD s [Var s v]
-newNL p n d = replicateM n (newL p d)
+newNL :: FDDomain v => Int -> [v] -> FD s [Var s v]
+newNL n d = replicateM n (newL d)
 
 -- | Same as 'new' except to take a Traversable containing domains.
-newT :: (FDDomain v, Traversable t) =>
-        Pool s -> t (Domain v) -> FD s (t (Var s v))
-newT p = Traversable.mapM (new p)
+newT :: (FDDomain v, Traversable t) => t (Domain v) -> FD s (t (Var s v))
+newT = Traversable.mapM new
 
 -- | Same as 'new' except to take a Traversable containing lists as domains.
-newTL :: (FDDomain v, Traversable t) =>
-         Pool s -> t [v] -> FD s (t (Var s v))
-newTL p = Traversable.mapM (newL p)
+newTL :: (FDDomain v, Traversable t) => t [v] -> FD s (t (Var s v))
+newTL = Traversable.mapM newL
 
 -- | Same as 'new' except to take a Container containing domains.
-newC :: Container c => Pool s -> c Domain -> FD s (c (Var s))
-newC p = cmapM (new p)
+newC :: Container c => c Domain -> FD s (c (Var s))
+newC = cmapM new
 
 -- | Same as 'new' except to take a Container containing domains.
-newCL :: Container c => Pool s -> c [] -> FD s (c (Var s))
-newCL p = cmapM (newL p)
+newCL :: Container c => c [] -> FD s (c (Var s))
+newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
 getL :: FDDomain v => Var s v -> FD s [v]
@@ -247,43 +255,43 @@ single s = Set.size s == 1
 
 -- | (for debug)
 getStack :: Var s v -> FD s [Domain v]
-getStack (Var _ vs _) = readSTRef vs
+getStack (Var _ vs _) = lift $ readSTRef vs
 
 __push :: NVar s -> FD s ()
 __push (NVar (Var vd vs _)) = do
-  d <- readSTRef vd
-  modifySTRef vs $ \ds -> d:ds
+  d <- lift $ readSTRef vd
+  lift $ modifySTRef vs $ \ds -> d:ds
 
 __pop :: NVar s -> FD s ()
 __pop (NVar (Var vd vs _)) = do
-  (d:ds) <- readSTRef vs
-  writeSTRef vd d
-  writeSTRef vs ds
+  (d:ds) <- lift $ readSTRef vs
+  lift $ writeSTRef vd d
+  lift $ writeSTRef vs ds
 
-_push :: Pool s -> FD s ()
-_push p = do
-  vs <- readSTRef p
+push :: FD s ()
+push = do
+  vs <- getVarList
   mapM_ __push vs
 
-_pop :: Pool s -> FD s ()
-_pop p = do
-  vs <- readSTRef p
+pop :: FD s ()
+pop = do
+  vs <- getVarList
   mapM_ __pop vs
 
 -- | Label variables specified in list.
-labelL :: FDDomain v => Pool s -> [Var s v] -> FD s [[v]]
-labelL p l = liftM (map $ map head . unCList) $ labelC' p (CList l) (map NVar l)
+labelL :: FDDomain v => [Var s v] -> FD s [[v]]
+labelL l = liftM (map $ map head . unCList) $ labelC' (CList l) (map NVar l)
 
 -- | Label variables specified in Traversable.
-labelT :: (FDDomain v, Traversable t) => Pool s -> t (Var s v) -> FD s [t v]
-labelT p t = liftM (map $ fmap head . unCTraversable) $ labelC' p (CTraversable t) (Foldable.toList $ fmap NVar t)
+labelT :: (FDDomain v, Traversable t) => t (Var s v) -> FD s [t v]
+labelT t = liftM (map $ fmap head . unCTraversable) $ labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
-labelC :: Container c => Pool s -> c (Var s) -> FD s [c []]
-labelC p c = labelC' p c (toList NVar c)
+labelC :: Container c => c (Var s) -> FD s [c []]
+labelC c = labelC' c (toList NVar c)
 
-labelC' :: Container c => Pool s -> c (Var s) -> [NVar s] -> FD s [c []]
-labelC' p c nvs =
+labelC' :: Container c => c (Var s) -> [NVar s] -> FD s [c []]
+labelC' c nvs =
   case nvs of
     []        -> do
       c' <- getCL c
@@ -292,18 +300,18 @@ labelC' p c nvs =
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
       liftM concat $ forM d $ \i -> do
-        _push p
+        push
         r <- setS v i
         s <- if r
-             then labelC' p c nvss
+             then labelC' c nvss
              else return []
-        _pop p
+        pop
         return s
 
 -- | (for internal)
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
-  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ readSTRef vd
+  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ lift $ readSTRef vd
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -319,10 +327,10 @@ type Propagator s = FD s Bool
 -- | Add a propagator to the variable
 add :: Var s v -> Propagator s -> FD s ()
 add (Var _ _ va) p = do
-  a <- readSTRef va
+  a <- lift $ readSTRef va
   let varAction' = do r <- a
                       if r then p else return False
-  writeSTRef va varAction'
+  lift $ writeSTRef va varAction'
 
 -- | Add a propagator to the variable and invoke it
 add1 :: Var s v -> Propagator s -> FD s Bool
@@ -499,8 +507,8 @@ subConstraint c vx vy = (vx', vy') where
 -}
 testL :: (Domain Int, Domain Int)
 testL = runFD $ do
-  p <- newPool
-  v <- newL p [1..10]
+  p <- newVarList
+  v <- newL [1..10]
   val <- get v
   setL v [1..5]
   val' <- get v
@@ -512,8 +520,7 @@ testL = runFD $ do
 -}
 testTLProp :: (Domain Int, Domain Int)
 testTLProp = runFD $ do
-  p <- newPool
-  [x, y] <- newTL p [[1,3..11], [5..10]]
+  [x, y] <- newTL [[1,3..11], [5..10]]
   x `eq` y
   dx <- get x
   dy <- get y
@@ -525,8 +532,7 @@ testTLProp = runFD $ do
 -}
 testAlldiff :: (Domain Int, Domain Int, Domain Int)
 testAlldiff = runFD $ do
-  p <- newPool
-  [x, y, z] <- newTL p [[1,3..11], [5..10], [5]]
+  [x, y, z] <- newTL [[1,3..11], [5..10], [5]]
   alldiff [x, y, z]
   dx <- get x
   dy <- get y
@@ -539,9 +545,8 @@ testAlldiff = runFD $ do
 -}
 testProp :: (Domain Int, Domain Int)
 testProp = runFD $ do
-  p <- newPool
-  x <- newL p [1,3..11]
-  y <- newL p [5..10]
+  x <- newL [1,3..11]
+  y <- newL [5..10]
   x `eq` y
   dx <- get x
   dy <- get y

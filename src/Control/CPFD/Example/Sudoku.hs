@@ -1,5 +1,11 @@
 {-|
-Sudoku Example for CPFD
+Module      : Control.CPFD.Example.Sudokku
+Description : Sudoku Example for CPFD
+Copyright   : (c) notae@me.com, 2014
+License     : BSD-style
+Maintainer  : notae@me.com
+Stability   : experimental
+Portability : POSIX
 
 Originally from:
   <http://overtond.blogspot.jp/2008/07/haskell-sudoku-solver-using-finite.html>
@@ -55,13 +61,12 @@ solveSudoku puzzle = runFD $ sudoku puzzle
 
 sudoku :: Puzzle -> FD s [Puzzle]
 sudoku puzzle = do
-  pool <- newPool
-  vars <- newNL pool 81 [1..9]
+  vars <- newNL 81 [1..9]
   zipWithM_ (\x n -> when (n > 0) $ setS x n >> return ()) vars puzzle
   mapM_ alldiff (rows vars)
   mapM_ alldiff (columns vars)
   mapM_ alldiff (boxes vars)
-  labelL pool vars
+  labelL vars
 
 rows, columns, boxes :: [a] -> [[a]]
 rows = chunk 9

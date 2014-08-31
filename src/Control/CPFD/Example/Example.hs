@@ -26,161 +26,161 @@ import qualified Data.Set as Set
 [[1,4],[1,5],[2,4],[2,5],[3,4],[3,5]]
 -}
 test1 :: [[Int]]
-test1 = runFD' $ \p -> do
-  x <- newL p [1..3]
-  y <- newL p [4..5]
-  labelL p [x, y]
+test1 = runFD $ do
+  x <- newL [1..3]
+  y <- newL [4..5]
+  labelL [x, y]
 
 {-|
 >>> sort test2
 [[1,3],[2,2],[3,1]]
 -}
 test2 :: [[Int]]
-test2 = runFD' $ \p -> do
-  x <- newL p [1..3]
-  y <- newL p [1..3]
+test2 = runFD $ do
+  x <- newL [1..3]
+  y <- newL [1..3]
   add' 4 x y
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort test3
 [[1,3,7],[2,2,8],[3,1,9]]
 -}
 test3 :: [[Int]]
-test3 = runFD' $ \p -> do
-  x <- newL p [1..10]
-  y <- newL p [1..10]
-  z <- newL p [1..10]
+test3 = runFD $ do
+  x <- newL [1..10]
+  y <- newL [1..10]
+  z <- newL [1..10]
   add' 4 x y
   add' 10 y z
-  labelL p [x, y, z]
+  labelL [x, y, z]
 
 {-|
 >>> sort testSub1
 [[1,3],[2,4],[3,5]]
 -}
 testSub1 :: [[Int]]
-testSub1 = runFD' $ \p -> do
-  x <- newL p [1..5]
-  y <- newL p [1..5]
+testSub1 = runFD $ do
+  x <- newL [1..5]
+  y <- newL [1..5]
   sub 2 y x
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort testEq1
 [[1,3,1],[2,4,2],[3,5,3]]
 -}
 testEq1 :: [[Int]]
-testEq1 = runFD' $ \p -> do
-  x <- newL p [1..5]
-  y <- newL p [1..5]
-  z <- newL p [1..5]
+testEq1 = runFD $ do
+  x <- newL [1..5]
+  y <- newL [1..5]
+  z <- newL [1..5]
   z `eq` x
   sub 2 y x
-  labelL p [x, y, z]
+  labelL [x, y, z]
 
 {-|
 >>> sort testLE1
 [[1,1],[1,2],[1,3],[2,2],[2,3],[3,3]]
 -}
 testLE1 :: [[Int]]
-testLE1 = runFD' $ \p -> do
-  x <- newL p [1..3]
-  y <- newL p [1..3]
+testLE1 = runFD $ do
+  x <- newL [1..3]
+  y <- newL [1..3]
   x `le` y
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort testNeq1
 [[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
 -}
 testNeq1 :: [[Int]]
-testNeq1 = runFD' $ \p -> do
-  x <- newL p [1..3]
-  y <- newL p [1..3]
+testNeq1 = runFD $ do
+  x <- newL [1..3]
+  y <- newL [1..3]
   x `neq` y
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> length testAlldiff1
 6
 -}
 testAlldiff1 :: [[Int]]
-testAlldiff1 = runFD' $ \p -> do
-  x <- newL p [1..3]
-  y <- newL p [1..3]
-  z <- newL p [1..3]
+testAlldiff1 = runFD $ do
+  x <- newL [1..3]
+  y <- newL [1..3]
+  z <- newL [1..3]
   alldiff [x, y, z]
-  labelL p [x, y, z]
+  labelL [x, y, z]
 
 {-|
 >>> length testVars1
 24
 -}
 testVars1 :: [[Int]]
-testVars1 = runFD' $ \p -> do
-  xs <- newNL p 4 [1..4]
+testVars1 = runFD $ do
+  xs <- newNL 4 [1..4]
   alldiff xs
-  labelL p xs
+  labelL xs
 
 {-|
 >>> sort testAdd31
 [[4,1,3],[4,2,2],[5,2,3],[5,3,2],[6,3,3]]
 -}
 testAdd31 :: [[Int]]
-testAdd31 = runFD' $ \p -> do
-  x <- newL p [4..8]
-  y <- newL p [0..3]
-  z <- newL p [2..3]
+testAdd31 = runFD $ do
+  x <- newL [4..8]
+  y <- newL [0..3]
+  z <- newL [2..3]
   add3 x y z
-  labelL p [x, y, z]
+  labelL [x, y, z]
 
 {-|
 >>> sort testAdd32
 [[0,0],[0,1],[0,2],[1,1],[1,2],[1,3],[2,2],[2,3],[3,3]]
 -}
 testAdd32 :: [[Int]]
-testAdd32 = runFD' $ \p -> do
-  x <- newL p [0..3]
-  y <- newL p [0..3]
-  z <- newL p [0..2]
+testAdd32 = runFD $ do
+  x <- newL [0..3]
+  y <- newL [0..3]
+  z <- newL [0..2]
   add3 y x z
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort testEqmod1
 [[4,1],[4,4],[5,2],[5,5]]
 -}
 testEqmod1 :: [[Int]]
-testEqmod1 = runFD' $ \p -> do
-  x <- newL p [4..5]
-  y <- newL p [0..5]
+testEqmod1 = runFD $ do
+  x <- newL [4..5]
+  y <- newL [0..5]
   eqmod 3 x y
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort testNeqmod1
 [[4,0],[4,2],[4,3],[4,5],[5,0],[5,1],[5,3],[5,4]]
 -}
 testNeqmod1 :: [[Int]]
-testNeqmod1 = runFD' $ \p -> do
-  x <- newL p [4..5]
-  y <- newL p [0..5]
+testNeqmod1 = runFD $ do
+  x <- newL [4..5]
+  y <- newL [0..5]
   neqmod 3 x y
-  labelL p [x, y]
+  labelL [x, y]
 
 {-|
 >>> sort testBool1
 [[False,True,False],[True,False,True]]
 -}
 testBool1 :: [[Bool]]
-testBool1 = runFD' $ \p -> do
-  x <- newL p [False, True]
-  y <- newL p [False, True]
-  z <- newL p [False, True]
+testBool1 = runFD $ do
+  x <- newL [False, True]
+  y <- newL [False, True]
+  z <- newL [False, True]
   x `neq` y
   y `neq` z
-  labelL p [x, y, z]
+  labelL [x, y, z]
 
 {-|
 Embedding variable into Traversable
@@ -188,10 +188,10 @@ Embedding variable into Traversable
 [[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
 -}
 testTraversable :: [[Int]]
-testTraversable = runFD' $ \p -> do
-  vars <- newTL p [[1..3], [1..3]]
+testTraversable = runFD $ do
+  vars <- newTL [[1..3], [1..3]]
   alldiffF vars
-  labelT p vars
+  labelT vars
 
 {-|
 Example of constraints with multiple type variables
@@ -251,9 +251,9 @@ Test for constraints with multiple type variables in Container
 >>> sort testMT
 [PairList {unPairList = [([1],[False]),([4],[True])]},PairList {unPairList = [([1],[False]),([5],[False])]},PairList {unPairList = [([2],[True]),([4],[True])]},PairList {unPairList = [([2],[True]),([5],[False])]},PairList {unPairList = [([3],[False]),([4],[True])]},PairList {unPairList = [([3],[False]),([5],[False])]}]-}
 testMT :: [PairList Int Bool []]
-testMT = runFD' $ \p -> do
-  v <- newCL p $
+testMT = runFD $ do
+  v <- newCL $
        PairList [ ([1..3], [True, False])
                 , ([4..5], [True, False]) ]
   forM (unPairList v) $ uncurry mt
-  labelC p v
+  labelC v
