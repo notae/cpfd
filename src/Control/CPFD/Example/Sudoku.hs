@@ -66,7 +66,7 @@ sudoku puzzle = do
   mapM_ alldiff (rows vars)
   mapM_ alldiff (columns vars)
   mapM_ alldiff (boxes vars)
-  labelL vars
+  labelT vars
 
 rows, columns, boxes :: [a] -> [[a]]
 rows = chunk 9

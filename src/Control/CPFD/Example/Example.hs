@@ -9,6 +9,10 @@ Portability : POSIX
 -}
 
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Control.CPFD.Example.Example where
 
@@ -29,7 +33,7 @@ test1 :: [[Int]]
 test1 = runFD $ do
   x <- newL [1..3]
   y <- newL [4..5]
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort test2
@@ -40,7 +44,7 @@ test2 = runFD $ do
   x <- newL [1..3]
   y <- newL [1..3]
   add' 4 x y
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort test3
@@ -53,7 +57,7 @@ test3 = runFD $ do
   z <- newL [1..10]
   add' 4 x y
   add' 10 y z
-  labelL [x, y, z]
+  labelT [x, y, z]
 
 {-|
 >>> sort testSub1
@@ -64,7 +68,7 @@ testSub1 = runFD $ do
   x <- newL [1..5]
   y <- newL [1..5]
   sub 2 y x
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort testEq1
@@ -77,7 +81,7 @@ testEq1 = runFD $ do
   z <- newL [1..5]
   z `eq` x
   sub 2 y x
-  labelL [x, y, z]
+  labelT [x, y, z]
 
 {-|
 >>> sort testLE1
@@ -88,7 +92,7 @@ testLE1 = runFD $ do
   x <- newL [1..3]
   y <- newL [1..3]
   x `le` y
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort testNeq1
@@ -99,7 +103,7 @@ testNeq1 = runFD $ do
   x <- newL [1..3]
   y <- newL [1..3]
   x `neq` y
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> length testAlldiff1
@@ -111,7 +115,7 @@ testAlldiff1 = runFD $ do
   y <- newL [1..3]
   z <- newL [1..3]
   alldiff [x, y, z]
-  labelL [x, y, z]
+  labelT [x, y, z]
 
 {-|
 >>> length testVars1
@@ -121,7 +125,7 @@ testVars1 :: [[Int]]
 testVars1 = runFD $ do
   xs <- newNL 4 [1..4]
   alldiff xs
-  labelL xs
+  labelT xs
 
 {-|
 >>> sort testAdd31
@@ -133,7 +137,7 @@ testAdd31 = runFD $ do
   y <- newL [0..3]
   z <- newL [2..3]
   add3 x y z
-  labelL [x, y, z]
+  labelT [x, y, z]
 
 {-|
 >>> sort testAdd32
@@ -145,7 +149,7 @@ testAdd32 = runFD $ do
   y <- newL [0..3]
   z <- newL [0..2]
   add3 y x z
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort testEqmod1
@@ -156,7 +160,7 @@ testEqmod1 = runFD $ do
   x <- newL [4..5]
   y <- newL [0..5]
   eqmod 3 x y
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort testNeqmod1
@@ -167,7 +171,7 @@ testNeqmod1 = runFD $ do
   x <- newL [4..5]
   y <- newL [0..5]
   neqmod 3 x y
-  labelL [x, y]
+  labelT [x, y]
 
 {-|
 >>> sort testBool1
@@ -180,7 +184,7 @@ testBool1 = runFD $ do
   z <- newL [False, True]
   x `neq` y
   y `neq` z
-  labelL [x, y, z]
+  labelT [x, y, z]
 
 {-|
 Embedding variable into Traversable
@@ -231,17 +235,25 @@ mtConstraint vx vy = (vx', vy') where
 {-|
 Example of Container with multiple type variables
 -}
+type PairList x y = [(x, y)]
 
-newtype PairList x y t =
-  PairList { unPairList :: [(t x, t y)] }
+newtype CPairList x y t =
+  CPairList { unPairList :: PairList (t x) (t y) }
   deriving (Show, Eq, Ord)
 
 instance (FDDomain x, FDDomain y) =>
-         Container (PairList x y) where
-  cmap f (PairList ps) = PairList $ fmap (\(x, y) -> (f x, f y)) ps
-  cmapA f (PairList ps) =
-    PairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
-  toList f (PairList ps) = concatMap (\(x, y) -> [f x, f y]) ps
+         ContainerMap (CPairList x y) where
+  cmapA f (CPairList ps) =
+    CPairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
+  fromContainer f (CPairList ps) = concatMap (\(x, y) -> [f x, f y]) ps
+
+instance ContainerLift (CPairList x y) (PairList x y) where
+  cup f ps = CPairList $ fmap (\(x, y) -> (f x, f y)) ps
+  cdown f (CPairList ps) = fmap (\(x, y) -> (f x, f y)) ps
+
+instance (ContainerMap (CPairList x y),
+          ContainerLift (CPairList x y) (PairList x y)) =>
+         Container (CPairList x y) (PairList x y)
 
 {-|
 Test for constraints with multiple type variables in Container
@@ -249,11 +261,12 @@ Test for constraints with multiple type variables in Container
 >>> length testMT
 6
 >>> sort testMT
-[PairList {unPairList = [([1],[False]),([4],[True])]},PairList {unPairList = [([1],[False]),([5],[False])]},PairList {unPairList = [([2],[True]),([4],[True])]},PairList {unPairList = [([2],[True]),([5],[False])]},PairList {unPairList = [([3],[False]),([4],[True])]},PairList {unPairList = [([3],[False]),([5],[False])]}]-}
-testMT :: [PairList Int Bool []]
+[[(1,False),(4,True)],[(1,False),(5,False)],[(2,True),(4,True)],[(2,True),(5,False)],[(3,False),(4,True)],[(3,False),(5,False)]]
+-}
+testMT :: [PairList Int Bool]
 testMT = runFD $ do
-  v <- newCL $
-       PairList [ ([1..3], [True, False])
-                , ([4..5], [True, False]) ]
-  forM (unPairList v) $ uncurry mt
-  labelC v
+  CPairList v <- newCL $
+                 CPairList [ ([1..3], [True, False])
+                           , ([4..5], [True, False]) ]
+  forM v $ uncurry mt
+  labelC $ CPairList v

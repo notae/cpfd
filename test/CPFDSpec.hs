@@ -1,7 +1,6 @@
 module CPFDSpec where
 
 import Control.CPFD
-import Data.Maybe (maybeToList)
 import Test.Hspec
 -- import Test.Hspec.QuickCheck (prop)
 -- import Test.QuickCheck hiding ((.&.))
@@ -10,13 +9,15 @@ import Test.Hspec
 spec :: Spec
 spec = do
 
-  describe "List#cmap" $ do
-    let cMaybe = CList [Just (123::Int), Nothing]
-    let cList  = CList [[123], []]
-    it "id" $
-      cmap id cMaybe `shouldBe` cMaybe
-    it "maybeToList" $
-      cmap maybeToList cMaybe `shouldBe` cList
+  describe "CTraversabe#cup" $ do
+    let c = [123::Int, 456]
+    let cList  = CTraversable [[123::Int], [456]]
+    it "to []" $ cup (:[]) c `shouldBe` cList
+
+  describe "CTraversable#cdown" $ do
+    let c = [123::Int, 456]
+    let cList  = CTraversable [[123::Int], [456]]
+    it "from []" $ cdown head cList `shouldBe` c
 
   describe "runFD" $ do
     it "empty monad" $
