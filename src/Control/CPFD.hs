@@ -16,6 +16,9 @@ Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Control.CPFD
        (
@@ -26,16 +29,16 @@ module Control.CPFD
        , FDDomain
        , Domain
        , Var
-       , Container (..), CList (..), CTraversable (..)
+       , Container, ContainerMap (..), ContainerLift (..)
+       , CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newC, newCL
        , set, setS, setL
        -- * Constraint Store
        , Propagator
---        , add, add2, adds
        , ArcPropagator, arcConstraint
        , MultiPropagator, multiConstraint
        -- * Labelling
-       , labelL, labelT, labelC
+       , labelT, labelC
        -- * Primitive Constraint
        -- ** Core Constraint
        , alldiff
@@ -82,6 +85,7 @@ import qualified Control.Monad.State as State
 -- | Monad for constraints on finite domain
 type FD s = StateT (FDState s) (ST s)
 
+-- | (for internal use)
 data FDState s = FDState { varList :: VarList s }
 
 -- | Run FD monad
@@ -105,35 +109,41 @@ data Var s v =
   , varStack  :: STRef s [Domain v]
   , varAction :: STRef s (FD s Bool) }
 
--- | (for internal use in pool)
+-- | (for internal use in variable list)
 data NVar s = forall v. FDDomain v => NVar (Var s v)
 
-class Container c where
-  cmap :: (forall a. t a -> t' a) -> c t -> c t'
+class ContainerMap c where
   cmapA :: Applicative f =>
            (forall a. FDDomain a => t a -> f (t' a)) -> c t -> f (c t')
   cmapM :: Monad m =>
            (forall a. FDDomain a => t a -> m (t' a)) -> c t -> m (c t')
   cmapM f = unwrapMonad . cmapA (WrapMonad . f)
-  toList :: (forall a. FDDomain a => t a -> t') -> c t -> [t']
+  fromContainer :: (forall a. FDDomain a => t a -> t') -> c t -> [t']
 
--- | (for internal use)
-newtype CList v t = CList { unCList :: [t v] } deriving (Eq, Show)
+class ContainerLift c c' where
+  cup :: (forall a. a -> t a) -> c' -> c t
+  cdown :: (forall a. t a -> a) -> c t -> c'
 
-instance FDDomain v => Container (CList v)  where
-  cmap f (CList ts) = CList $ map f ts
-  cmapA f (CList ts) = CList <$> Traversable.traverse f ts
-  toList f (CList ts) = map f ts
+-- | Container to hold data (variable domain, reference,
+-- assignment, etc.) related to variables.
+class (ContainerMap c, ContainerLift c c') => Container c c'
 
 -- | (for internal use)
 newtype CTraversable t' v t =
   CTraversable { unCTraversable :: t' (t v) } deriving (Eq, Show)
 
 instance (FDDomain v, Traversable t') =>
-         Container (CTraversable t' v) where
-  cmap f (CTraversable ts) = CTraversable $ fmap f ts
+         ContainerMap (CTraversable t' v) where
   cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
-  toList f (CTraversable ts) = Foldable.toList $ fmap f ts
+  fromContainer f (CTraversable ts) = Foldable.toList $ fmap f ts
+
+instance Traversable t' => ContainerLift (CTraversable t' v) (t' v) where
+  cup f ts = CTraversable $ fmap f ts
+  cdown f (CTraversable ts) = fmap f ts
+
+instance (ContainerMap (CTraversable t' v),
+          ContainerLift (CTraversable t' v) (t' v)) =>
+         Container (CTraversable t' v) (t' v)
 
 -- | Variable list
 type VarList s = STRef s [NVar s]
@@ -212,11 +222,11 @@ newTL :: (FDDomain v, Traversable t) => t [v] -> FD s (t (Var s v))
 newTL = Traversable.mapM newL
 
 -- | Same as 'new' except to take a Container containing domains.
-newC :: Container c => c Domain -> FD s (c (Var s))
+newC :: ContainerMap c => c Domain -> FD s (c (Var s))
 newC = cmapM new
 
 -- | Same as 'new' except to take a Container containing domains.
-newCL :: Container c => c [] -> FD s (c (Var s))
+newCL :: ContainerMap c => c [] -> FD s (c (Var s))
 newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
@@ -228,11 +238,11 @@ getM :: FDDomain v => Var s v -> FD s (Maybe v)
 getM v = liftM (listToMaybe . Set.toList) $ get v
 
 -- | Same as 'get' except to return a list as domain in Container.
-getCL :: Container c => c (Var s) -> FD s (c [])
+getCL :: ContainerMap c => c (Var s) -> FD s (c [])
 getCL = cmapM getL
 
 -- | Same as 'get' except to return a Maybe as domain in Container.
-getCM :: Container c => c (Var s) -> FD s (c Maybe)
+getCM :: ContainerMap c => c (Var s) -> FD s (c Maybe)
 getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
@@ -278,24 +288,20 @@ pop = do
   vs <- getVarList
   mapM_ __pop vs
 
--- | Label variables specified in list.
-labelL :: FDDomain v => [Var s v] -> FD s [[v]]
-labelL l = liftM (map $ map head . unCList) $ labelC' (CList l) (map NVar l)
-
 -- | Label variables specified in Traversable.
 labelT :: (FDDomain v, Traversable t) => t (Var s v) -> FD s [t v]
-labelT t = liftM (map $ fmap head . unCTraversable) $ labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
+labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
-labelC :: Container c => c (Var s) -> FD s [c []]
-labelC c = labelC' c (toList NVar c)
+labelC :: Container c c' => c (Var s) -> FD s [c']
+labelC c = labelC' c (fromContainer NVar c)
 
-labelC' :: Container c => c (Var s) -> [NVar s] -> FD s [c []]
+labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [c']
 labelC' c nvs =
   case nvs of
     []        -> do
       c' <- getCL c
-      return [c']
+      return [cdown head c']
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
@@ -331,12 +337,6 @@ add (Var _ _ va) p = do
   let varAction' = do r <- a
                       if r then p else return False
   lift $ writeSTRef va varAction'
-
--- | Add a propagator to the variable and invoke it
-add1 :: Var s v -> Propagator s -> FD s Bool
-add1 v p = do
-  add v p
-  p
 
 -- | Add a propagator to the variables and invoke it
 add2 :: Var s v1 -> Var s v2 -> Propagator s -> FD s Bool
