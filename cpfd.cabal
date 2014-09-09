@@ -56,7 +56,7 @@ library
                      , Control.CPFD.Example.Sudoku
 
   -- Modules included in this library but not exported.
-  -- other-modules:
+  other-modules:       Control.CPFD.Internal.Queue
 
   -- LANGUAGE extensions used by modules in this package.
   other-extensions:    MultiParamTypeClasses, RankNTypes, ExistentialQuantification, ConstraintKinds

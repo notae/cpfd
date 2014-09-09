@@ -24,7 +24,7 @@ module Control.CPFD
        (
        -- * Monads
          FD
-       , runFD
+       , runFD, runFD'
        -- * Variables and Domains
        , FDDomain
        , Domain
@@ -62,10 +62,18 @@ import Control.Applicative (WrappedMonad (..))
 import Control.Monad (forM)
 import Control.Monad (liftM)
 import Control.Monad (replicateM)
+import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Control.Monad.ST (runST)
 import Control.Monad.State (StateT)
+import Control.Monad.State (evalStateT)
+import qualified Control.Monad.State as State
+import Control.Monad.Trans (lift)
+import Control.Monad.Writer (WriterT)
+import Control.Monad.Writer (runWriterT)
+import Control.Monad.Writer (tell)
 import Data.Foldable (Foldable)
+import qualified Data.Foldable as Foldable
 import Data.Maybe (listToMaybe)
 import Data.STRef (STRef)
 import Data.STRef (modifySTRef)
@@ -73,28 +81,51 @@ import Data.STRef (newSTRef)
 import Data.STRef (readSTRef)
 import Data.STRef (writeSTRef)
 import Data.Set (Set)
-import Data.Traversable (Traversable)
-import qualified Data.Foldable as Foldable
 import qualified Data.Set as Set
+import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
-import Control.Monad.State (evalStateT)
-import Control.Monad.Trans (lift)
-import qualified Control.Monad.State as State
+import Debug.Trace (traceM)
 
+import Control.CPFD.Internal.Queue (Queue)
+import qualified Control.CPFD.Internal.Queue as Queue
 
 -- | Monad for constraints on finite domain
-type FD s = StateT (FDState s) (ST s)
+type FD s = WriterT [String] (StateT (FDState s) (ST s))
 
 -- | (for internal use)
-data FDState s = FDState { varList :: VarList s }
+liftST :: ST s a -> FD s a
+liftST = lift . lift
+
+-- | (for internal use)
+data FDState s =
+  FDState
+  { varList :: VarList s
+  , propQueue :: STRef s (Queue (String, Propagator s))
+  , propStack :: STRef s [String]
+  , traceFlag :: Bool }
 
 -- | Run FD monad
 runFD :: (forall s. FD s a) -> a
-runFD fd = runST $ flip evalStateT undefined $ do
+runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ fdWrapper False fd
+
+-- | Run FD monad with trace
+runFD' :: (forall s. FD s a) -> (a, [String])
+runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
+
+-- | (for internal use)
+fdWrapper :: Bool -> FD s a -> FD s a
+fdWrapper tf fd = do
   vl <- newVarList
-  let state = FDState { varList = vl }
-  State.put state
-  fd
+  rpq <- liftST $ newSTRef Queue.empty
+  rst <- liftST $ newSTRef []
+  State.put $ FDState { varList = vl
+                      , propQueue = rpq
+                      , propStack = rst
+                      , traceFlag = tf }
+  tell ["Initialized."]
+  a <- fd
+  tell ["Terminated."]
+  return a
 
 -- | Constraint for domain value
 type FDDomain v = (Ord v, Show v)
@@ -107,7 +138,7 @@ data Var s v =
   Var
   { varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
-  , varAction :: STRef s (FD s Bool) }
+  , varAction :: STRef s [(String, Propagator s)] }
 
 -- | (for internal use in variable list)
 data NVar s = forall v. FDDomain v => NVar (Var s v)
@@ -150,54 +181,110 @@ type VarList s = STRef s [NVar s]
 
 -- | Create an empty variable list.
 newVarList :: FD s (VarList s)
-newVarList = lift $ newSTRef []
+newVarList = liftST $ newSTRef []
 
 getVarList :: FD s [NVar s]
 getVarList = do
-  FDState vl <- State.get
-  lift $ readSTRef vl
+  vl <- State.gets varList
+  liftST $ readSTRef vl
 
 -- | (for debug)
 showNVar :: NVar s -> FD s String
 showNVar (NVar (Var vd vs _)) = do
-  d <- lift $ readSTRef vd
-  s <- lift $ readSTRef vs
+  d <- liftST $ readSTRef vd
+  s <- liftST $ readSTRef vs
   return $ show (d, s)
+
+-- | (for debug)
+traceM' :: String -> FD s ()
+traceM' s = do
+  f <- State.gets traceFlag
+  when f $ traceM s
 
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
 new :: FDDomain v => Domain v -> FD s (Var s v)
 new d = do
-  FDState vl <- State.get
-  vd <- lift $ newSTRef d
-  vs <- lift $ newSTRef []
-  va <- lift $ newSTRef $ return True
+  vl <- State.gets varList
+  vd <- liftST $ newSTRef d
+  vs <- liftST $ newSTRef []
+  va <- liftST $ newSTRef []
   let v = Var vd vs va
-  lift $ modifySTRef vl $ \nvs -> NVar v : nvs
+  liftST $ modifySTRef vl $ \nvs -> NVar v : nvs
   return v
 
 -- | Get domain of the variable.
 get :: Var s v -> FD s (Domain v)
-get (Var vd _ _) = lift $ readSTRef vd
+get (Var vd _ _) = do
+  execProp
+  liftST $ readSTRef vd
 
 -- | Set domain of the variable and invoke propagators.
-set :: FDDomain v => Var s v -> Domain v -> FD s Bool
-set (Var vd _ va) d =
-  if empty d
-  then return False
-  else do
-    old <- lift $ readSTRef vd
-    let sd   = Set.size d
-    let sold = Set.size old
-    if sd < sold
-      then do
-        lift $ writeSTRef vd d
-        a <- lift $ readSTRef va
-        a
-      else if sd == sold
-           then return True
-           else error "invalid: tried to enlarge domain"
+set :: FDDomain v => Var s v -> Domain v -> FD s ()
+set (Var vd _ va) d = do
+  old <- liftST $ readSTRef vd
+  let sd   = Set.size d
+  let sold = Set.size old
+  if sd < sold
+    then do
+    liftST $ writeSTRef vd d
+    a <- liftST $ readSTRef va
+    enqProp a
+    else if sd == sold
+         then return ()
+         else do
+           pq <- getPropQueue
+           error $ "Internal error: tried to enlarge domain: " ++
+             show old ++ " -> " ++ show d ++ "\npropQueue:\n" ++ unlines pq
+
+-- | (for debug)
+getPropQueue :: FD s [String]
+getPropQueue = do
+  rpq <- State.gets propQueue
+  pq <- liftST $ readSTRef rpq
+  return $ map fst $ Queue.toList pq
+
+-- | (for internal)
+enqProp :: [(String, Propagator s)] -> FD s ()
+enqProp = mapM_ enq where
+  enq p@(n, _) = do
+    rpq <- State.gets propQueue
+    liftST $ modifySTRef rpq $ \pq -> Queue.enq p pq
+    traceM' $ "enqProp: " ++ n
+
+-- | (for internal)
+execProp :: FD s ()
+execProp = do
+  rpq <- State.gets propQueue
+  q <- liftST $ readSTRef rpq
+  if Queue.null q
+    then return ()
+    else do
+      let ((n, a), q') = Queue.deq q
+      liftST $ writeSTRef rpq q'
+      traceM' $ "execProp: > " ++ n
+      a
+      traceM' $ "execProp: < " ++ n
+      execProp
+
+-- | (for debug)
+getPropStack :: FD s [String]
+getPropStack = do
+  rst <- State.gets propStack
+  liftST $ readSTRef rst
+
+-- | (for debug)
+pushPropStack :: String -> FD s ()
+pushPropStack n = do
+  rst <- State.gets propStack
+  liftST $ modifySTRef rst $ \st -> n:st
+
+-- | (for debug)
+popPropStack :: FD s ()
+popPropStack = do
+  rst <- State.gets propStack
+  liftST $ modifySTRef rst $ \(_:st) -> st
 
 -- Utilities for variable domain
 
@@ -246,11 +333,11 @@ getCM :: ContainerMap c => c (Var s) -> FD s (c Maybe)
 getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
-setS :: FDDomain v => Var s v -> v -> FD s Bool
+setS :: FDDomain v => Var s v -> v -> FD s ()
 setS v val = set v (Set.singleton val)
 
 -- | Same as 'set' except to take a list as domain.
-setL :: FDDomain v => Var s v -> [v] -> FD s Bool
+setL :: FDDomain v => Var s v -> [v] -> FD s ()
 setL v d = set v (Set.fromList d)
 
 -- | Check if domain is empty
@@ -265,26 +352,28 @@ single s = Set.size s == 1
 
 -- | (for debug)
 getStack :: Var s v -> FD s [Domain v]
-getStack (Var _ vs _) = lift $ readSTRef vs
+getStack (Var _ vs _) = liftST $ readSTRef vs
 
 __push :: NVar s -> FD s ()
 __push (NVar (Var vd vs _)) = do
-  d <- lift $ readSTRef vd
-  lift $ modifySTRef vs $ \ds -> d:ds
+  d <- liftST $ readSTRef vd
+  liftST $ modifySTRef vs $ \ds -> d:ds
 
 __pop :: NVar s -> FD s ()
 __pop (NVar (Var vd vs _)) = do
-  (d:ds) <- lift $ readSTRef vs
-  lift $ writeSTRef vd d
-  lift $ writeSTRef vs ds
+  (d:ds) <- liftST $ readSTRef vs
+  liftST $ writeSTRef vd d
+  liftST $ writeSTRef vs ds
 
 push :: FD s ()
 push = do
+  traceM' "push"
   vs <- getVarList
   mapM_ __push vs
 
 pop :: FD s ()
 pop = do
+  traceM' "pop"
   vs <- getVarList
   mapM_ __pop vs
 
@@ -307,17 +396,15 @@ labelC' c nvs =
       d <- getL v
       liftM concat $ forM d $ \i -> do
         push
-        r <- setS v i
-        s <- if r
-             then labelC' c nvss
-             else return []
+        setS v i
+        s <- labelC' c nvss
         pop
         return s
 
 -- | (for internal)
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
-  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ lift $ readSTRef vd
+  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ liftST $ readSTRef vd
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -327,28 +414,27 @@ deleteFindMin nvs = do
 -- Primitives for variable domain propagator
 
 -- | Propagate a domain changing to other domains.
--- Return True for sat / unknown, False for unsat.
-type Propagator s = FD s Bool
+type Propagator s = FD s ()
 
 -- | Add a propagator to the variable
-add :: Var s v -> Propagator s -> FD s ()
-add (Var _ _ va) p = do
-  a <- lift $ readSTRef va
-  let varAction' = do r <- a
-                      if r then p else return False
-  lift $ writeSTRef va varAction'
+add :: String -> Var s v -> Propagator s -> FD s ()
+add n (Var _ _ va) p = do
+  liftST $ modifySTRef va $ \as -> (n, p):as
+  traceM' $ "add: " ++ n
 
 -- | Add a propagator to the variables and invoke it
-add2 :: Var s v1 -> Var s v2 -> Propagator s -> FD s Bool
-add2 v1 v2 p = do
-  add v1 p
-  add v2 p
+add2 :: String -> Var s v1 -> Var s v2 -> Propagator s -> FD s ()
+add2 n v1 v2 p = do
+  traceM' $ "add2: " ++ n
+  add n v1 p
+  add n v2 p
   p
 
 -- | Add a propagator to the variables and invoke it
-adds :: [Var s v] -> Propagator s -> FD s Bool
-adds vs p = do
-  mapM_ (`add` p) vs
+adds :: String -> [Var s v] -> Propagator s -> FD s ()
+adds n vs p = do
+  traceM' $ "adds: " ++ n
+  mapM_ (\v -> add n v p) vs
   p
 
 -- Utilities for variable domain propagator
@@ -358,41 +444,55 @@ type ArcPropagator a b = Domain a -> Domain b -> (Domain a, Domain b)
 
 -- | Create arc constraint from propagator
 arcConstraint :: (FDDomain a, FDDomain b) =>
-                 ArcPropagator a b -> Var s a -> Var s b -> FD s Bool
-arcConstraint c x y = add2 x y $ do
+                 String -> ArcPropagator a b -> Var s a -> Var s b -> FD s ()
+arcConstraint n c x y = add2 n x y $ do
   dx <- get x
   dy <- get y
-  let (dx', dy') = c dx dy
-  rx <- set x dx'
-  ry <- set y dy'
-  return $ rx && ry
+  let (dx', dy') =
+        if Set.null dx || Set.null dy
+        then (Set.empty, Set.empty)
+        else c dx dy
+  traceM' $ "arcConstraint: " ++ show n ++ ": "
+    ++ show dx ++ " -> " ++ show dx' ++ ", "
+    ++ show dy ++ " -> " ++ show dy'
+  when (Set.size dx < Set.size dx' || Set.size dy < Set.size dy') $
+    error $ "arcConstraint: invalid: "
+      ++ show dx ++ " -> " ++ show dx' ++ ", "
+      ++ show dy ++ " -> " ++ show dy'
+  set x dx'
+  set y dy'
 
 -- | Domain propagator for multiple-arc
 type MultiPropagator v = [Domain v] -> [Domain v]
 
 -- | Create multiple-arc constraint from propagator
-multiConstraint :: FDDomain v => MultiPropagator v -> [Var s v] -> FD s Bool
-multiConstraint c vs = adds vs $ do
+multiConstraint :: FDDomain v =>
+                   String -> MultiPropagator v -> [Var s v] -> FD s ()
+multiConstraint n c vs = adds n vs $ do
   ds <- mapM get vs
-  let ds' = c ds
-  rs <- (`mapM` zip vs ds') $ uncurry set
-  return $ and rs
+  let ds' =
+        if any Set.null ds
+        then map (const Set.empty) ds
+        else c ds
+  traceM' $ "multiConstraint: " ++ show n ++ ": "
+    ++ show ds ++ " -> " ++ show ds'
+  when (or $ map (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
+    error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
+  (`mapM_` zip vs ds') $ uncurry set
 
 -- Primitive constraints
 
 -- | Equality constraint
-eq :: FDDomain v => Var s v -> Var s v -> FD s Bool
-eq x y = adds [x, y] $ do
-  dx <- get x
-  dy <- get y
-  let dz = dx `Set.intersection` dy
-  rx <- set x dz
-  ry <- set y dz
-  return (rx && ry)
+eq :: FDDomain v => Var s v -> Var s v -> FD s ()
+eq = arcConstraint "eq" eqConstraint
+
+eqConstraint :: FDDomain v => ArcPropagator v v
+eqConstraint vx vy = (vz, vz) where
+  vz = vx `Set.intersection` vy
 
 -- | Inequality (<=) constraint
-le :: FDDomain v => Var s v -> Var s v -> FD s Bool
-le = arcConstraint leConstraint
+le :: FDDomain v => Var s v -> Var s v -> FD s ()
+le = arcConstraint "le" leConstraint
 
 leConstraint :: FDDomain v => ArcPropagator v v
 leConstraint vx vy = (vx', vy') where
@@ -402,8 +502,8 @@ leConstraint vx vy = (vx', vy') where
   vy' = Set.filter (>= minX) vy
 
 -- | Inequality (/=) constraint
-neq :: FDDomain v => Var s v -> Var s v -> FD s Bool
-neq = arcConstraint neqConstraint
+neq :: FDDomain v => Var s v -> Var s v -> FD s ()
+neq = arcConstraint "neq" neqConstraint
 
 neqConstraint :: FDDomain v => ArcPropagator v v
 neqConstraint vx vy
@@ -416,19 +516,19 @@ neqConstraint vx vy
   | otherwise = (vx, vy)
 
 -- | Differ from each other in list
-alldiff :: FDDomain v => [Var s v] -> FD s Bool
-alldiff []     = return True
+alldiff :: FDDomain v => [Var s v] -> FD s ()
+alldiff []     = return ()
 alldiff (v:vs) = do
   mapM_ (v `neq`) vs
   alldiff vs
 
 -- | Differ from each other in Foldable
-alldiffF :: (FDDomain v, Foldable f) => f (Var s v) ->FD s Bool
+alldiffF :: (FDDomain v, Foldable f) => f (Var s v) ->FD s ()
 alldiffF = alldiff . Foldable.toList
 
 -- | x == y (mod m)
-eqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s Bool
-eqmod m = arcConstraint (eqmodConstraint m)
+eqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
+eqmod m = arcConstraint "eqmod" (eqmodConstraint m)
 
 eqmodConstraint :: Integral v => v -> ArcPropagator v v
 eqmodConstraint m vx vy = (vx', vy') where
@@ -437,8 +537,8 @@ eqmodConstraint m vx vy = (vx', vy') where
   vy' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vy
 
 -- | x /= y (mod m)
-neqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s Bool
-neqmod m = arcConstraint (neqmodConstraint m)
+neqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
+neqmod m = arcConstraint "neqmod" (neqmodConstraint m)
 
 neqmodConstraint :: Integral v => v -> ArcPropagator v v
 neqmodConstraint m vx vy = (vx'', vy'') where
@@ -463,8 +563,8 @@ alldiffmod m (v:vs) = do
   alldiffmod m vs
 
 -- | add' c x y means c = x + y (c is constant value)
-add' :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s Bool
-add' c = arcConstraint (addConstraint c)
+add' :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
+add' c = arcConstraint "add'" (addConstraint c)
 
 addConstraint :: (Eq v, Num v) => v -> ArcPropagator v v
 addConstraint c vx vy = (vx', vy') where
@@ -472,8 +572,8 @@ addConstraint c vx vy = (vx', vy') where
   vy' = Set.filter (\iy -> any (\ix -> ix+iy==c) $ Set.toList vx) vy
 
 -- | add3 z x y means z = x + y
-add3 :: (FDDomain v, Num v) => Var s v -> Var s v -> Var s v -> FD s Bool
-add3 z x y = multiConstraint add3Constraint [x, y, z]
+add3 :: (FDDomain v, Num v) => Var s v -> Var s v -> Var s v -> FD s ()
+add3 z x y = multiConstraint "add3" add3Constraint [x, y, z]
 
 add3Constraint :: (Ord a, Num a) => MultiPropagator a
 add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
@@ -490,8 +590,8 @@ add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
   vy' = Set.filter (\e -> minY <= e && e <= maxY) vy
 
 -- | sub c x y means x - y == c (c is constant value)
-sub :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s Bool
-sub c = arcConstraint (subConstraint c)
+sub :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
+sub c = arcConstraint "sub" (subConstraint c)
 
 subConstraint :: (Eq a, Num a) => a -> ArcPropagator a a
 subConstraint c vx vy = (vx', vy') where
