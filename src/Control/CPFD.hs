@@ -62,6 +62,7 @@ import Control.Applicative (WrappedMonad (..))
 import Control.Monad (forM)
 import Control.Monad (liftM)
 import Control.Monad (replicateM)
+import Control.Monad (unless)
 import Control.Monad (when)
 import Control.Monad.ST (ST)
 import Control.Monad.ST (runST)
@@ -118,10 +119,10 @@ fdWrapper tf fd = do
   vl <- newVarList
   rpq <- liftST $ newSTRef Queue.empty
   rst <- liftST $ newSTRef []
-  State.put $ FDState { varList = vl
-                      , propQueue = rpq
-                      , propStack = rst
-                      , traceFlag = tf }
+  State.put FDState { varList = vl
+                    , propQueue = rpq
+                    , propStack = rst
+                    , traceFlag = tf }
   tell ["Initialized."]
   a <- fd
   tell ["Terminated."]
@@ -226,17 +227,14 @@ set (Var vd _ va) d = do
   old <- liftST $ readSTRef vd
   let sd   = Set.size d
   let sold = Set.size old
-  if sd < sold
-    then do
+  when (sd < sold) $ do
     liftST $ writeSTRef vd d
     a <- liftST $ readSTRef va
     enqProp a
-    else if sd == sold
-         then return ()
-         else do
-           pq <- getPropQueue
-           error $ "Internal error: tried to enlarge domain: " ++
-             show old ++ " -> " ++ show d ++ "\npropQueue:\n" ++ unlines pq
+    unless (sd == sold) $ do
+      pq <- getPropQueue
+      error $ "Internal error: tried to enlarge domain: " ++
+        show old ++ " -> " ++ show d ++ "\npropQueue:\n" ++ unlines pq
 
 -- | (for debug)
 getPropQueue :: FD s [String]
@@ -258,15 +256,13 @@ execProp :: FD s ()
 execProp = do
   rpq <- State.gets propQueue
   q <- liftST $ readSTRef rpq
-  if Queue.null q
-    then return ()
-    else do
-      let ((n, a), q') = Queue.deq q
-      liftST $ writeSTRef rpq q'
-      traceM' $ "execProp: > " ++ n
-      a
-      traceM' $ "execProp: < " ++ n
-      execProp
+  unless (Queue.null q) $ do
+    let ((n, a), q') = Queue.deq q
+    liftST $ writeSTRef rpq q'
+    traceM' $ "execProp: > " ++ n
+    a
+    traceM' $ "execProp: < " ++ n
+    execProp
 
 -- | (for debug)
 getPropStack :: FD s [String]
@@ -476,7 +472,7 @@ multiConstraint n c vs = adds n vs $ do
         else c ds
   traceM' $ "multiConstraint: " ++ show n ++ ": "
     ++ show ds ++ " -> " ++ show ds'
-  when (or $ map (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
+  when (any (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
     error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
   (`mapM_` zip vs ds') $ uncurry set
 
@@ -607,7 +603,6 @@ subConstraint c vx vy = (vx', vy') where
 -}
 testL :: (Domain Int, Domain Int)
 testL = runFD $ do
-  p <- newVarList
   v <- newL [1..10]
   val <- get v
   setL v [1..5]
