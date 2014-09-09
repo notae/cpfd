@@ -227,11 +227,12 @@ set (Var vd _ va) d = do
   old <- liftST $ readSTRef vd
   let sd   = Set.size d
   let sold = Set.size old
-  when (sd < sold) $ do
-    liftST $ writeSTRef vd d
-    a <- liftST $ readSTRef va
-    enqProp a
-    unless (sd == sold) $ do
+  if sd < sold
+    then do
+      liftST $ writeSTRef vd d
+      a <- liftST $ readSTRef va
+      enqProp a
+    else unless (sd == sold) $ do
       pq <- getPropQueue
       error $ "Internal error: tried to enlarge domain: " ++
         show old ++ " -> " ++ show d ++ "\npropQueue:\n" ++ unlines pq
