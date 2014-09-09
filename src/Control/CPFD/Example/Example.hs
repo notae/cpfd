@@ -19,7 +19,7 @@ module Control.CPFD.Example.Example where
 import Control.Applicative ((<$>))
 import Control.Applicative ((<*>))
 import Control.CPFD
-import Control.Monad (forM)
+import Control.Monad (forM_)
 import Data.List (sort)
 import Data.Traversable (traverse)
 import qualified Data.Set as Set
@@ -140,16 +140,16 @@ testAdd31 = runFD $ do
   labelT [x, y, z]
 
 {-|
->>> sort testAdd32
-[[0,0],[0,1],[0,2],[1,1],[1,2],[1,3],[2,2],[2,3],[3,3]]
+>>> sort $ runFD testAdd32
+[[0,0,0],[0,1,1],[0,2,2],[1,0,1],[1,1,2],[1,2,3],[2,0,2],[2,1,3],[3,0,3]]
 -}
-testAdd32 :: [[Int]]
-testAdd32 = runFD $ do
+testAdd32 :: FD s [[Int]]
+testAdd32 = do
   x <- newL [0..3]
-  y <- newL [0..3]
-  z <- newL [0..2]
-  add3 y x z
-  labelT [x, y]
+  y <- newL [0..2]
+  z <- newL [0..3]
+  add3 z x y
+  labelT [x, y, z]
 
 {-|
 >>> sort testEqmod1
@@ -200,8 +200,8 @@ testTraversable = runFD $ do
 {-|
 Example of constraints with multiple type variables
 -}
-mt :: Var s Int -> Var s Bool -> FD s Bool
-mt = arcConstraint mtConstraint
+mt :: Var s Int -> Var s Bool -> FD s ()
+mt = arcConstraint "mt" mtConstraint
 
 {-|
 >>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True,False])
@@ -268,5 +268,5 @@ testMT = runFD $ do
   CPairList v <- newCL $
                  CPairList [ ([1..3], [True, False])
                            , ([4..5], [True, False]) ]
-  forM v $ uncurry mt
+  forM_ v $ uncurry mt
   labelC $ CPairList v
