@@ -101,7 +101,8 @@ liftST = lift . lift
 data FDState s =
   FDState
   { varList :: VarList s
-  , propQueue :: STRef s (Queue (String, Propagator s))
+  , lastVarId :: STRef s Int
+  , propQueue :: STRef s (Queue (NVar s, (String, Propagator s)))
   , propStack :: STRef s [String]
   , traceFlag :: Bool }
 
@@ -109,7 +110,7 @@ data FDState s =
 runFD :: (forall s. FD s a) -> a
 runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ fdWrapper False fd
 
--- | Run FD monad with trace
+-- | Run FD monad with trace for debug
 runFD' :: (forall s. FD s a) -> (a, [String])
 runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
 
@@ -117,9 +118,11 @@ runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
 fdWrapper :: Bool -> FD s a -> FD s a
 fdWrapper tf fd = do
   vl <- newVarList
+  rvi <- liftST $ newSTRef 0
   rpq <- liftST $ newSTRef Queue.empty
   rst <- liftST $ newSTRef []
   State.put FDState { varList = vl
+                    , lastVarId = rvi
                     , propQueue = rpq
                     , propStack = rst
                     , traceFlag = tf }
@@ -137,12 +140,19 @@ type Domain = Set
 -- | Finite domain variable
 data Var s v =
   Var
-  { varDomain :: STRef s (Domain v)
+  { varId :: Int
+  , varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
   , varAction :: STRef s [(String, Propagator s)] }
 
+instance Show (Var s v) where
+  show v = "_" ++ show (varId v)
+
 -- | (for internal use in variable list)
 data NVar s = forall v. FDDomain v => NVar (Var s v)
+
+instance Show (NVar s) where
+  show = showNVar'
 
 class ContainerMap c where
   cmapA :: Applicative f =>
@@ -191,10 +201,14 @@ getVarList = do
 
 -- | (for debug)
 showNVar :: NVar s -> FD s String
-showNVar (NVar (Var vd vs _)) = do
-  d <- liftST $ readSTRef vd
-  s <- liftST $ readSTRef vs
-  return $ show (d, s)
+showNVar (NVar v) = do
+  d <- liftST $ readSTRef (varDomain v)
+  s <- liftST $ readSTRef (varStack v)
+  return $ show (varId v, d, s)
+
+-- | (for debug)
+showNVar' :: NVar s -> String
+showNVar' (NVar v) = "_" ++ show (varId v)
 
 -- | (for debug)
 traceM' :: String -> FD s ()
@@ -208,22 +222,34 @@ traceM' s = do
 new :: FDDomain v => Domain v -> FD s (Var s v)
 new d = do
   vl <- State.gets varList
+  vi <- newVarId
   vd <- liftST $ newSTRef d
   vs <- liftST $ newSTRef []
   va <- liftST $ newSTRef []
-  let v = Var vd vs va
+  let v = Var { varId = vi, varDomain = vd, varStack = vs, varAction = va }
   liftST $ modifySTRef vl $ \nvs -> NVar v : nvs
   return v
 
+-- | (for internal)
+newVarId :: FD s Int
+newVarId = do
+  rvi <- State.gets lastVarId
+  vi <- liftST $ readSTRef rvi
+  let vi' = vi + 1
+  liftST $ writeSTRef rvi vi'
+  return vi'
+
 -- | Get domain of the variable.
 get :: Var s v -> FD s (Domain v)
-get (Var vd _ _) = do
+get v = do
   execProp
-  liftST $ readSTRef vd
+  liftST $ readSTRef (varDomain v)
 
 -- | Set domain of the variable and invoke propagators.
 set :: FDDomain v => Var s v -> Domain v -> FD s ()
-set (Var vd _ va) d = do
+set v d = do
+  let vd = varDomain v
+  let va = varAction v
   old <- liftST $ readSTRef vd
   let sd   = Set.size d
   let sold = Set.size old
@@ -231,7 +257,7 @@ set (Var vd _ va) d = do
     then do
       liftST $ writeSTRef vd d
       a <- liftST $ readSTRef va
-      enqProp a
+      enqProp v a
     else unless (sd == sold) $ do
       pq <- getPropQueue
       error $ "Internal error: tried to enlarge domain: " ++
@@ -242,15 +268,16 @@ getPropQueue :: FD s [String]
 getPropQueue = do
   rpq <- State.gets propQueue
   pq <- liftST $ readSTRef rpq
-  return $ map fst $ Queue.toList pq
+  return $ map (fst . snd) $ Queue.toList pq
 
 -- | (for internal)
-enqProp :: [(String, Propagator s)] -> FD s ()
-enqProp = mapM_ enq where
+enqProp :: FDDomain v => Var s v -> [(String, Propagator s)] -> FD s ()
+enqProp v = mapM_ enq where
   enq p@(n, _) = do
     rpq <- State.gets propQueue
-    liftST $ modifySTRef rpq $ \pq -> Queue.enq p pq
-    traceM' $ "enqProp: " ++ n
+    let nv = NVar v
+    liftST $ modifySTRef rpq $ \pq -> Queue.enq (nv, p) pq
+    traceM' $ "enqProp: " ++ show nv ++ " -> " ++ n
 
 -- | (for internal)
 execProp :: FD s ()
@@ -258,11 +285,11 @@ execProp = do
   rpq <- State.gets propQueue
   q <- liftST $ readSTRef rpq
   unless (Queue.null q) $ do
-    let ((n, a), q') = Queue.deq q
+    let ((nv, (n, a)), q') = Queue.deq q
     liftST $ writeSTRef rpq q'
-    traceM' $ "execProp: > " ++ n
+    traceM' $ "execProp: > " ++ show nv ++ " -> " ++ n
     a
-    traceM' $ "execProp: < " ++ n
+    traceM' $ "execProp: < " ++ show nv ++ " -> " ++ n
     execProp
 
 -- | (for debug)
@@ -349,18 +376,18 @@ single s = Set.size s == 1
 
 -- | (for debug)
 getStack :: Var s v -> FD s [Domain v]
-getStack (Var _ vs _) = liftST $ readSTRef vs
+getStack v = liftST $ readSTRef (varStack v)
 
 __push :: NVar s -> FD s ()
-__push (NVar (Var vd vs _)) = do
-  d <- liftST $ readSTRef vd
-  liftST $ modifySTRef vs $ \ds -> d:ds
+__push (NVar v) = do
+  d <- liftST $ readSTRef (varDomain v)
+  liftST $ modifySTRef (varStack v) $ \ds -> d:ds
 
 __pop :: NVar s -> FD s ()
-__pop (NVar (Var vd vs _)) = do
-  (d:ds) <- liftST $ readSTRef vs
-  liftST $ writeSTRef vd d
-  liftST $ writeSTRef vs ds
+__pop (NVar v) = do
+  (d:ds) <- liftST $ readSTRef (varStack v)
+  liftST $ writeSTRef (varDomain v) d
+  liftST $ writeSTRef (varStack v) ds
 
 push :: FD s ()
 push = do
@@ -393,6 +420,7 @@ labelC' c nvs =
       d <- getL v
       liftM concat $ forM d $ \i -> do
         push
+        traceM' $ "labelC': " ++ show v ++ "=" ++ show i
         setS v i
         s <- labelC' c nvss
         pop
@@ -401,7 +429,8 @@ labelC' c nvs =
 -- | (for internal)
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
-  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ liftST $ readSTRef vd
+  vdss <- forM nvs $
+          \(NVar v) -> liftM Set.size $ liftST $ readSTRef (varDomain v)
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -415,14 +444,12 @@ type Propagator s = FD s ()
 
 -- | Add a propagator to the variable
 add :: String -> Var s v -> Propagator s -> FD s ()
-add n (Var _ _ va) p = do
-  liftST $ modifySTRef va $ \as -> (n, p):as
-  traceM' $ "add: " ++ n
+add n v p = liftST $ modifySTRef (varAction v) $ \as -> (n, p):as
 
 -- | Add a propagator to the variables and invoke it
 add2 :: String -> Var s v1 -> Var s v2 -> Propagator s -> FD s ()
 add2 n v1 v2 p = do
-  traceM' $ "add2: " ++ n
+  traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
   add n v1 p
   add n v2 p
   p
@@ -430,7 +457,7 @@ add2 n v1 v2 p = do
 -- | Add a propagator to the variables and invoke it
 adds :: String -> [Var s v] -> Propagator s -> FD s ()
 adds n vs p = do
-  traceM' $ "adds: " ++ n
+  traceM' $ "adds: " ++ n ++ " " ++ show vs
   mapM_ (\v -> add n v p) vs
   p
 
