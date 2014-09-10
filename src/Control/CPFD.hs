@@ -476,7 +476,7 @@ arcConstraint n c x y = add2 n x y $ do
         if Set.null dx || Set.null dy
         then (Set.empty, Set.empty)
         else c dx dy
-  traceM' $ "arcConstraint: " ++ show n ++ ": "
+  traceM' $ "arcConstraint: " ++ n ++ show (x, y) ++ ": "
     ++ show dx ++ " -> " ++ show dx' ++ ", "
     ++ show dy ++ " -> " ++ show dy'
   when (Set.size dx < Set.size dx' || Set.size dy < Set.size dy') $
@@ -498,7 +498,7 @@ multiConstraint n c vs = adds n vs $ do
         if any Set.null ds
         then map (const Set.empty) ds
         else c ds
-  traceM' $ "multiConstraint: " ++ show n ++ ": "
+  traceM' $ "multiConstraint: " ++ n ++ show vs ++  ": "
     ++ show ds ++ " -> " ++ show ds'
   when (any (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
     error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
