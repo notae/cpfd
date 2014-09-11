@@ -1,5 +1,5 @@
-cpfd
-====
+CP(FD) for Haskell
+==================
 
 Library for Constraint Programming over Finite Domain in Haskell
 
