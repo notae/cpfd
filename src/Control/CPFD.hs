@@ -23,7 +23,7 @@ Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 module Control.CPFD
        (
        -- * Monads
-         FD
+         FD, FDState
        , runFD, runFD'
        -- * Variables and Domains
        , FDDomain
@@ -34,9 +34,8 @@ module Control.CPFD
        , new, newL, newN, newNL, newT, newTL, newC, newCL
        , set, setS, setL
        -- * Constraint Store
-       , Propagator
-       , ArcPropagator, arcConstraint
-       , MultiPropagator, multiConstraint
+       , ArcPropRule, ArcConstraint, arcConstraint
+       , MultiPropRule, MultiConstraint, multiConstraint
        -- * Labelling
        , labelT, labelC
        -- * Primitive Constraint
@@ -101,7 +100,8 @@ liftST = lift . lift
 data FDState s =
   FDState
   { varList :: VarList s
-  , propQueue :: STRef s (Queue (String, Propagator s))
+  , lastVarId :: STRef s Int
+  , propQueue :: STRef s (Queue (Propagator s))
   , propStack :: STRef s [String]
   , traceFlag :: Bool }
 
@@ -109,7 +109,7 @@ data FDState s =
 runFD :: (forall s. FD s a) -> a
 runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ fdWrapper False fd
 
--- | Run FD monad with trace
+-- | Run FD monad with trace for debug
 runFD' :: (forall s. FD s a) -> (a, [String])
 runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
 
@@ -117,9 +117,11 @@ runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
 fdWrapper :: Bool -> FD s a -> FD s a
 fdWrapper tf fd = do
   vl <- newVarList
+  rvi <- liftST $ newSTRef 0
   rpq <- liftST $ newSTRef Queue.empty
   rst <- liftST $ newSTRef []
   State.put FDState { varList = vl
+                    , lastVarId = rvi
                     , propQueue = rpq
                     , propStack = rst
                     , traceFlag = tf }
@@ -134,15 +136,35 @@ type FDDomain v = (Ord v, Show v)
 -- | Domain of variables.
 type Domain = Set
 
+-- | Propagate a domain changing to other domains.
+data VarPropagator s =
+  VarPropagator
+  { vpName   :: String
+  , vpVars   :: [NVar s]
+  , vpAction :: FD s () }
+
+-- | Propagate the specified domain changing to other domains.
+data Propagator s =
+  Propagator
+  { propVar  :: NVar s
+  , propProp :: VarPropagator s }
+
 -- | Finite domain variable
 data Var s v =
   Var
-  { varDomain :: STRef s (Domain v)
+  { varId :: Int
+  , varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
-  , varAction :: STRef s [(String, Propagator s)] }
+  , varProp   :: STRef s [VarPropagator s] }
+
+instance Show (Var s v) where
+  show v = "_" ++ show (varId v)
 
 -- | (for internal use in variable list)
 data NVar s = forall v. FDDomain v => NVar (Var s v)
+
+instance Show (NVar s) where
+  show = showNVar'
 
 class ContainerMap c where
   cmapA :: Applicative f =>
@@ -191,10 +213,14 @@ getVarList = do
 
 -- | (for debug)
 showNVar :: NVar s -> FD s String
-showNVar (NVar (Var vd vs _)) = do
-  d <- liftST $ readSTRef vd
-  s <- liftST $ readSTRef vs
-  return $ show (d, s)
+showNVar (NVar v) = do
+  d <- liftST $ readSTRef (varDomain v)
+  s <- liftST $ readSTRef (varStack v)
+  return $ show (varId v, d, s)
+
+-- | (for debug)
+showNVar' :: NVar s -> String
+showNVar' (NVar v) = "_" ++ show (varId v)
 
 -- | (for debug)
 traceM' :: String -> FD s ()
@@ -208,30 +234,42 @@ traceM' s = do
 new :: FDDomain v => Domain v -> FD s (Var s v)
 new d = do
   vl <- State.gets varList
+  vi <- newVarId
   vd <- liftST $ newSTRef d
   vs <- liftST $ newSTRef []
-  va <- liftST $ newSTRef []
-  let v = Var vd vs va
+  vp <- liftST $ newSTRef []
+  let v = Var { varId = vi, varDomain = vd, varStack = vs, varProp = vp }
   liftST $ modifySTRef vl $ \nvs -> NVar v : nvs
   return v
 
+-- | (for internal)
+newVarId :: FD s Int
+newVarId = do
+  rvi <- State.gets lastVarId
+  vi <- liftST $ readSTRef rvi
+  let vi' = vi + 1
+  liftST $ writeSTRef rvi vi'
+  return vi'
+
 -- | Get domain of the variable.
 get :: Var s v -> FD s (Domain v)
-get (Var vd _ _) = do
+get v = do
   execProp
-  liftST $ readSTRef vd
+  liftST $ readSTRef (varDomain v)
 
 -- | Set domain of the variable and invoke propagators.
 set :: FDDomain v => Var s v -> Domain v -> FD s ()
-set (Var vd _ va) d = do
+set v d = do
+  let vd = varDomain v
+  let vp = varProp v
   old <- liftST $ readSTRef vd
   let sd   = Set.size d
   let sold = Set.size old
   if sd < sold
     then do
       liftST $ writeSTRef vd d
-      a <- liftST $ readSTRef va
-      enqProp a
+      p <- liftST $ readSTRef vp
+      enqProp v p
     else unless (sd == sold) $ do
       pq <- getPropQueue
       error $ "Internal error: tried to enlarge domain: " ++
@@ -242,15 +280,17 @@ getPropQueue :: FD s [String]
 getPropQueue = do
   rpq <- State.gets propQueue
   pq <- liftST $ readSTRef rpq
-  return $ map fst $ Queue.toList pq
+  return $ map (vpName . propProp) $ Queue.toList pq
 
 -- | (for internal)
-enqProp :: [(String, Propagator s)] -> FD s ()
-enqProp = mapM_ enq where
-  enq p@(n, _) = do
+enqProp :: FDDomain v => Var s v -> [VarPropagator s] -> FD s ()
+enqProp v = mapM_ enq where
+  enq vp = do
     rpq <- State.gets propQueue
+    let nv = NVar v
+    let p = Propagator { propVar = nv, propProp = vp }
     liftST $ modifySTRef rpq $ \pq -> Queue.enq p pq
-    traceM' $ "enqProp: " ++ n
+    traceM' $ "enqProp: " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
 
 -- | (for internal)
 execProp :: FD s ()
@@ -258,11 +298,13 @@ execProp = do
   rpq <- State.gets propQueue
   q <- liftST $ readSTRef rpq
   unless (Queue.null q) $ do
-    let ((n, a), q') = Queue.deq q
+    let (p, q') = Queue.deq q
+    let v  = propVar  p
+    let vp = propProp p
     liftST $ writeSTRef rpq q'
-    traceM' $ "execProp: > " ++ n
-    a
-    traceM' $ "execProp: < " ++ n
+    traceM' $ "execProp: > " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
+    vpAction vp
+    traceM' $ "execProp: < " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
     execProp
 
 -- | (for debug)
@@ -349,28 +391,28 @@ single s = Set.size s == 1
 
 -- | (for debug)
 getStack :: Var s v -> FD s [Domain v]
-getStack (Var _ vs _) = liftST $ readSTRef vs
+getStack v = liftST $ readSTRef (varStack v)
 
 __push :: NVar s -> FD s ()
-__push (NVar (Var vd vs _)) = do
-  d <- liftST $ readSTRef vd
-  liftST $ modifySTRef vs $ \ds -> d:ds
+__push (NVar v) = do
+  d <- liftST $ readSTRef (varDomain v)
+  liftST $ modifySTRef (varStack v) $ \ds -> d:ds
 
 __pop :: NVar s -> FD s ()
-__pop (NVar (Var vd vs _)) = do
-  (d:ds) <- liftST $ readSTRef vs
-  liftST $ writeSTRef vd d
-  liftST $ writeSTRef vs ds
+__pop (NVar v) = do
+  (d:ds) <- liftST $ readSTRef (varStack v)
+  liftST $ writeSTRef (varDomain v) d
+  liftST $ writeSTRef (varStack v) ds
 
 push :: FD s ()
 push = do
-  traceM' "push"
+  traceM' "{ -- push"
   vs <- getVarList
   mapM_ __push vs
 
 pop :: FD s ()
 pop = do
-  traceM' "pop"
+  traceM' "} -- pop"
   vs <- getVarList
   mapM_ __pop vs
 
@@ -393,6 +435,7 @@ labelC' c nvs =
       d <- getL v
       liftM concat $ forM d $ \i -> do
         push
+        traceM' $ "labelC': " ++ show v ++ "=" ++ show i
         setS v i
         s <- labelC' c nvss
         pop
@@ -401,7 +444,8 @@ labelC' c nvs =
 -- | (for internal)
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
-  vdss <- forM nvs $ \(NVar (Var vd _ _)) -> liftM Set.size $ liftST $ readSTRef vd
+  vdss <- forM nvs $
+          \(NVar v) -> liftM Set.size $ liftST $ readSTRef (varDomain v)
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -410,38 +454,36 @@ deleteFindMin nvs = do
 
 -- Primitives for variable domain propagator
 
--- | Propagate a domain changing to other domains.
-type Propagator s = FD s ()
-
 -- | Add a propagator to the variable
-add :: String -> Var s v -> Propagator s -> FD s ()
-add n (Var _ _ va) p = do
-  liftST $ modifySTRef va $ \as -> (n, p):as
-  traceM' $ "add: " ++ n
+add :: Var s v -> VarPropagator s -> FD s ()
+add v p = liftST $ modifySTRef (varProp v) $ \ps -> p:ps
 
 -- | Add a propagator to the variables and invoke it
-add2 :: String -> Var s v1 -> Var s v2 -> Propagator s -> FD s ()
-add2 n v1 v2 p = do
-  traceM' $ "add2: " ++ n
-  add n v1 p
-  add n v2 p
-  p
+add2 :: (FDDomain v1, FDDomain v2) =>
+        String -> Var s v1 -> Var s v2 -> FD s () -> FD s ()
+add2 n v1 v2 a = do
+  traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
+  add v1 $ VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
+  add v2 $ VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
+  a
 
 -- | Add a propagator to the variables and invoke it
-adds :: String -> [Var s v] -> Propagator s -> FD s ()
-adds n vs p = do
-  traceM' $ "adds: " ++ n
-  mapM_ (\v -> add n v p) vs
-  p
+adds :: FDDomain v => String -> [Var s v] -> FD s () -> FD s ()
+adds n vs a = do
+  traceM' $ "adds: " ++ n ++ " " ++ show vs
+  mapM_ (\v -> add v $ VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}) vs
+  a
 
 -- Utilities for variable domain propagator
 
 -- | Domain propagator for arc
-type ArcPropagator a b = Domain a -> Domain b -> (Domain a, Domain b)
+type ArcPropRule a b = Domain a -> Domain b -> (Domain a, Domain b)
+
+type ArcConstraint s a b = Var s a -> Var s b -> FD s ()
 
 -- | Create arc constraint from propagator
 arcConstraint :: (FDDomain a, FDDomain b) =>
-                 String -> ArcPropagator a b -> Var s a -> Var s b -> FD s ()
+                 String -> ArcPropRule a b -> ArcConstraint s a b
 arcConstraint n c x y = add2 n x y $ do
   dx <- get x
   dy <- get y
@@ -449,7 +491,7 @@ arcConstraint n c x y = add2 n x y $ do
         if Set.null dx || Set.null dy
         then (Set.empty, Set.empty)
         else c dx dy
-  traceM' $ "arcConstraint: " ++ show n ++ ": "
+  traceM' $ "arcConstraint: " ++ n ++ show (x, y) ++ ": "
     ++ show dx ++ " -> " ++ show dx' ++ ", "
     ++ show dy ++ " -> " ++ show dy'
   when (Set.size dx < Set.size dx' || Set.size dy < Set.size dy') $
@@ -460,18 +502,20 @@ arcConstraint n c x y = add2 n x y $ do
   set y dy'
 
 -- | Domain propagator for multiple-arc
-type MultiPropagator v = [Domain v] -> [Domain v]
+type MultiPropRule v = [Domain v] -> [Domain v]
+
+type MultiConstraint s v = [Var s v] -> FD s ()
 
 -- | Create multiple-arc constraint from propagator
 multiConstraint :: FDDomain v =>
-                   String -> MultiPropagator v -> [Var s v] -> FD s ()
+                   String -> MultiPropRule v -> MultiConstraint s v
 multiConstraint n c vs = adds n vs $ do
   ds <- mapM get vs
   let ds' =
         if any Set.null ds
         then map (const Set.empty) ds
         else c ds
-  traceM' $ "multiConstraint: " ++ show n ++ ": "
+  traceM' $ "multiConstraint: " ++ n ++ show vs ++  ": "
     ++ show ds ++ " -> " ++ show ds'
   when (any (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
     error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
@@ -483,7 +527,7 @@ multiConstraint n c vs = adds n vs $ do
 eq :: FDDomain v => Var s v -> Var s v -> FD s ()
 eq = arcConstraint "eq" eqConstraint
 
-eqConstraint :: FDDomain v => ArcPropagator v v
+eqConstraint :: FDDomain v => ArcPropRule v v
 eqConstraint vx vy = (vz, vz) where
   vz = vx `Set.intersection` vy
 
@@ -491,7 +535,7 @@ eqConstraint vx vy = (vz, vz) where
 le :: FDDomain v => Var s v -> Var s v -> FD s ()
 le = arcConstraint "le" leConstraint
 
-leConstraint :: FDDomain v => ArcPropagator v v
+leConstraint :: FDDomain v => ArcPropRule v v
 leConstraint vx vy = (vx', vy') where
   minX = Set.findMin vx
   maxY = Set.findMax vy
@@ -502,7 +546,7 @@ leConstraint vx vy = (vx', vy') where
 neq :: FDDomain v => Var s v -> Var s v -> FD s ()
 neq = arcConstraint "neq" neqConstraint
 
-neqConstraint :: FDDomain v => ArcPropagator v v
+neqConstraint :: FDDomain v => ArcPropRule v v
 neqConstraint vx vy
   | single vx && single vy =
     if vx == vy
@@ -527,7 +571,7 @@ alldiffF = alldiff . Foldable.toList
 eqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
 eqmod m = arcConstraint "eqmod" (eqmodConstraint m)
 
-eqmodConstraint :: Integral v => v -> ArcPropagator v v
+eqmodConstraint :: Integral v => v -> ArcPropRule v v
 eqmodConstraint m vx vy = (vx', vy') where
   vmz = Set.map (`mod` m) vx `Set.intersection` Set.map (`mod` m) vy
   vx' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vx
@@ -537,7 +581,7 @@ eqmodConstraint m vx vy = (vx', vy') where
 neqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
 neqmod m = arcConstraint "neqmod" (neqmodConstraint m)
 
-neqmodConstraint :: Integral v => v -> ArcPropagator v v
+neqmodConstraint :: Integral v => v -> ArcPropRule v v
 neqmodConstraint m vx vy = (vx'', vy'') where
   vmx = Set.map (`mod` m) vx
   vmy = Set.map (`mod` m) vy
@@ -563,7 +607,7 @@ alldiffmod m (v:vs) = do
 add' :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
 add' c = arcConstraint "add'" (addConstraint c)
 
-addConstraint :: (Eq v, Num v) => v -> ArcPropagator v v
+addConstraint :: (Eq v, Num v) => v -> ArcPropRule v v
 addConstraint c vx vy = (vx', vy') where
   vx' = Set.filter (\ix -> any (\iy -> ix+iy==c) $ Set.toList vy) vx
   vy' = Set.filter (\iy -> any (\ix -> ix+iy==c) $ Set.toList vx) vy
@@ -572,7 +616,7 @@ addConstraint c vx vy = (vx', vy') where
 add3 :: (FDDomain v, Num v) => Var s v -> Var s v -> Var s v -> FD s ()
 add3 z x y = multiConstraint "add3" add3Constraint [x, y, z]
 
-add3Constraint :: (Ord a, Num a) => MultiPropagator a
+add3Constraint :: (Ord a, Num a) => MultiPropRule a
 add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
   minZ = Set.findMin vx + Set.findMin vy
   maxZ = Set.findMax vx + Set.findMax vy
@@ -590,7 +634,7 @@ add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
 sub :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
 sub c = arcConstraint "sub" (subConstraint c)
 
-subConstraint :: (Eq a, Num a) => a -> ArcPropagator a a
+subConstraint :: (Eq a, Num a) => a -> ArcPropRule a a
 subConstraint c vx vy = (vx', vy') where
   vx' = Set.filter (\ix -> any (\iy -> ix==iy+c) $ Set.toList vy) vx
   vy' = Set.filter (\iy -> any (\ix -> ix==iy+c) $ Set.toList vx) vy

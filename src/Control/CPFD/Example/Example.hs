@@ -26,32 +26,32 @@ import qualified Data.Set as Set
 
 
 {-|
->>> sort test1
+>>> sort $ runFD test1
 [[1,4],[1,5],[2,4],[2,5],[3,4],[3,5]]
 -}
-test1 :: [[Int]]
-test1 = runFD $ do
+test1 :: FD s [[Int]]
+test1 = do
   x <- newL [1..3]
   y <- newL [4..5]
   labelT [x, y]
 
 {-|
->>> sort test2
+>>> sort $ runFD test2
 [[1,3],[2,2],[3,1]]
 -}
-test2 :: [[Int]]
-test2 = runFD $ do
+test2 :: FD s [[Int]]
+test2 = do
   x <- newL [1..3]
   y <- newL [1..3]
   add' 4 x y
   labelT [x, y]
 
 {-|
->>> sort test3
+>>> sort $ runFD test3
 [[1,3,7],[2,2,8],[3,1,9]]
 -}
-test3 :: [[Int]]
-test3 = runFD $ do
+test3 :: FD s [[Int]]
+test3 = do
   x <- newL [1..10]
   y <- newL [1..10]
   z <- newL [1..10]
@@ -60,22 +60,22 @@ test3 = runFD $ do
   labelT [x, y, z]
 
 {-|
->>> sort testSub1
+>>> sort $ runFD testSub1
 [[1,3],[2,4],[3,5]]
 -}
-testSub1 :: [[Int]]
-testSub1 = runFD $ do
+testSub1 :: FD s [[Int]]
+testSub1 = do
   x <- newL [1..5]
   y <- newL [1..5]
   sub 2 y x
   labelT [x, y]
 
 {-|
->>> sort testEq1
+>>> sort $ runFD testEq1
 [[1,3,1],[2,4,2],[3,5,3]]
 -}
-testEq1 :: [[Int]]
-testEq1 = runFD $ do
+testEq1 :: FD s [[Int]]
+testEq1 = do
   x <- newL [1..5]
   y <- newL [1..5]
   z <- newL [1..5]
@@ -84,33 +84,33 @@ testEq1 = runFD $ do
   labelT [x, y, z]
 
 {-|
->>> sort testLE1
+>>> sort $ runFD testLE1
 [[1,1],[1,2],[1,3],[2,2],[2,3],[3,3]]
 -}
-testLE1 :: [[Int]]
-testLE1 = runFD $ do
+testLE1 :: FD s [[Int]]
+testLE1 = do
   x <- newL [1..3]
   y <- newL [1..3]
   x `le` y
   labelT [x, y]
 
 {-|
->>> sort testNeq1
+>>> sort $ runFD testNeq1
 [[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
 -}
-testNeq1 :: [[Int]]
-testNeq1 = runFD $ do
+testNeq1 :: FD s [[Int]]
+testNeq1 = do
   x <- newL [1..3]
   y <- newL [1..3]
   x `neq` y
   labelT [x, y]
 
 {-|
->>> length testAlldiff1
+>>> length $ runFD testAlldiff1
 6
 -}
-testAlldiff1 :: [[Int]]
-testAlldiff1 = runFD $ do
+testAlldiff1 :: FD s [[Int]]
+testAlldiff1 = do
   x <- newL [1..3]
   y <- newL [1..3]
   z <- newL [1..3]
@@ -118,21 +118,21 @@ testAlldiff1 = runFD $ do
   labelT [x, y, z]
 
 {-|
->>> length testVars1
+>>> length $ runFD testVars1
 24
 -}
-testVars1 :: [[Int]]
-testVars1 = runFD $ do
+testVars1 :: FD s [[Int]]
+testVars1 = do
   xs <- newNL 4 [1..4]
   alldiff xs
   labelT xs
 
 {-|
->>> sort testAdd31
+>>> sort $ runFD testAdd31
 [[4,1,3],[4,2,2],[5,2,3],[5,3,2],[6,3,3]]
 -}
-testAdd31 :: [[Int]]
-testAdd31 = runFD $ do
+testAdd31 :: FD s [[Int]]
+testAdd31 = do
   x <- newL [4..8]
   y <- newL [0..3]
   z <- newL [2..3]
@@ -152,33 +152,33 @@ testAdd32 = do
   labelT [x, y, z]
 
 {-|
->>> sort testEqmod1
+>>> sort $ runFD testEqmod1
 [[4,1],[4,4],[5,2],[5,5]]
 -}
-testEqmod1 :: [[Int]]
-testEqmod1 = runFD $ do
+testEqmod1 :: FD s [[Int]]
+testEqmod1 = do
   x <- newL [4..5]
   y <- newL [0..5]
   eqmod 3 x y
   labelT [x, y]
 
 {-|
->>> sort testNeqmod1
+>>> sort $ runFD testNeqmod1
 [[4,0],[4,2],[4,3],[4,5],[5,0],[5,1],[5,3],[5,4]]
 -}
-testNeqmod1 :: [[Int]]
-testNeqmod1 = runFD $ do
+testNeqmod1 :: FD s [[Int]]
+testNeqmod1 = do
   x <- newL [4..5]
   y <- newL [0..5]
   neqmod 3 x y
   labelT [x, y]
 
 {-|
->>> sort testBool1
+>>> sort $ runFD testBool1
 [[False,True,False],[True,False,True]]
 -}
-testBool1 :: [[Bool]]
-testBool1 = runFD $ do
+testBool1 :: FD s [[Bool]]
+testBool1 = do
   x <- newL [False, True]
   y <- newL [False, True]
   z <- newL [False, True]
@@ -188,11 +188,11 @@ testBool1 = runFD $ do
 
 {-|
 Embedding variable into Traversable
->>> sort testTraversable
+>>> sort $ runFD testTraversable
 [[1,2],[1,3],[2,1],[2,3],[3,1],[3,2]]
 -}
-testTraversable :: [[Int]]
-testTraversable = runFD $ do
+testTraversable :: FD s [[Int]]
+testTraversable = do
   vars <- newTL [[1..3], [1..3]]
   alldiffF vars
   labelT vars
@@ -227,7 +227,7 @@ mt = arcConstraint "mt" mtConstraint
 >>> mtConstraint (Set.fromList [1..10]) (Set.fromList [])
 (fromList [],fromList [])
 -}
-mtConstraint :: ArcPropagator Int Bool
+mtConstraint :: ArcPropRule Int Bool
 mtConstraint vx vy = (vx', vy') where
   vx' = Set.filter (\x -> (x `mod` 2 == 0) `Set.member` vy) vx
   vy' = Set.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Set.toList vx]) vy
@@ -258,13 +258,13 @@ instance (ContainerMap (CPairList x y),
 {-|
 Test for constraints with multiple type variables in Container
 
->>> length testMT
+>>> length $ runFD testMT
 6
->>> sort testMT
+>>> sort $ runFD testMT
 [[(1,False),(4,True)],[(1,False),(5,False)],[(2,True),(4,True)],[(2,True),(5,False)],[(3,False),(4,True)],[(3,False),(5,False)]]
 -}
-testMT :: [PairList Int Bool]
-testMT = runFD $ do
+testMT :: FD s [PairList Int Bool]
+testMT = do
   CPairList v <- newCL $
                  CPairList [ ([1..3], [True, False])
                            , ([4..5], [True, False]) ]
