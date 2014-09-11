@@ -227,7 +227,7 @@ mt = arcConstraint "mt" mtConstraint
 >>> mtConstraint (Set.fromList [1..10]) (Set.fromList [])
 (fromList [],fromList [])
 -}
-mtConstraint :: ArcPropagator Int Bool
+mtConstraint :: ArcPropRule Int Bool
 mtConstraint vx vy = (vx', vy') where
   vx' = Set.filter (\x -> (x `mod` 2 == 0) `Set.member` vy) vx
   vy' = Set.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Set.toList vx]) vy
