@@ -290,7 +290,7 @@ enqProp v = mapM_ enq where
     let nv = NVar v
     let p = Propagator { propVar = nv, propProp = vp }
     liftST $ modifySTRef rpq $ \pq -> Queue.enq p pq
-    traceM' $ "enqProp: " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
+    traceM' $ "enqProp: " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
 
 -- | (for internal)
 execProp :: FD s ()
@@ -302,9 +302,9 @@ execProp = do
     let v  = propVar  p
     let vp = propProp p
     liftST $ writeSTRef rpq q'
-    traceM' $ "execProp: > " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
+    traceM' $ "execProp: > " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
     vpAction vp
-    traceM' $ "execProp: < " ++ show v ++ " -> " ++ (vpName vp) ++ show (vpVars vp)
+    traceM' $ "execProp: < " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
     execProp
 
 -- | (for debug)
@@ -463,15 +463,17 @@ add2 :: (FDDomain v1, FDDomain v2) =>
         String -> Var s v1 -> Var s v2 -> FD s () -> FD s ()
 add2 n v1 v2 a = do
   traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
-  add v1 $ VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
-  add v2 $ VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
+  let vp = VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
+  add v1 vp
+  add v2 vp
   a
 
 -- | Add a propagator to the variables and invoke it
 adds :: FDDomain v => String -> [Var s v] -> FD s () -> FD s ()
 adds n vs a = do
   traceM' $ "adds: " ++ n ++ " " ++ show vs
-  mapM_ (\v -> add v $ VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}) vs
+  let vp = VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}
+  mapM_ (\v -> add v vp) vs
   a
 
 -- Utilities for variable domain propagator
