@@ -599,8 +599,8 @@ neqmodConstraint m vx vy = (vx'', vy'') where
     | otherwise = (vx, vy)
 
 -- | Differ from each other in list (mod m)
-alldiffmod :: (FDDomain v, Integral v) => v -> [Var s v] -> FD s Bool
-alldiffmod _ []     = return True
+alldiffmod :: (FDDomain v, Integral v) => v -> [Var s v] -> FD s ()
+alldiffmod _ []     = return ()
 alldiffmod m (v:vs) = do
   mapM_ (neqmod m v) vs
   alldiffmod m vs
