@@ -19,10 +19,10 @@ module Control.CPFD.Example.Example where
 import Control.Applicative ((<$>))
 import Control.Applicative ((<*>))
 import Control.CPFD
+import qualified Control.CPFD.Domain as Domain
 import Control.Monad (forM_)
 import Data.List (sort)
 import Data.Traversable (traverse)
-import qualified Data.Set as Set
 
 
 {-|
@@ -204,33 +204,33 @@ mt :: Var s Int -> Var s Bool -> FD s ()
 mt = arcConstraint "mt" mtConstraint
 
 {-|
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True,False])
+>>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True,False])
 (fromList [1,2,3,4,5,6,7,8,9,10],fromList [False,True])
 
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True])
+>>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True])
 (fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [False])
+>>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [False])
 (fromList [1,3,5,7,9],fromList [False])
 
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [True,False])
+>>> mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [True,False])
 (fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True,False])
+>>> mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True,False])
 (fromList [1,3,5,7,9],fromList [False])
 
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [False])
+>>> mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [False])
 (fromList [],fromList [])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True])
+>>> mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True])
 (fromList [],fromList [])
 
->>> mtConstraint (Set.fromList []) (Set.fromList [True,False])
+>>> mtConstraint (Domain.fromList []) (Domain.fromList [True,False])
 (fromList [],fromList [])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [])
+>>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [])
 (fromList [],fromList [])
 -}
 mtConstraint :: ArcPropRule Int Bool
 mtConstraint vx vy = (vx', vy') where
-  vx' = Set.filter (\x -> (x `mod` 2 == 0) `Set.member` vy) vx
-  vy' = Set.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Set.toList vx]) vy
+  vx' = Domain.filter (\x -> (x `mod` 2 == 0) `Domain.member` vy) vx
+  vy' = Domain.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Domain.toList vx]) vy
 
 {-|
 Example of Container with multiple type variables
