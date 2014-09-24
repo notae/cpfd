@@ -52,6 +52,7 @@ cabal-version:       >=1.10
 library
   -- Modules exported by the library.
   exposed-modules:     Control.CPFD
+                     , Control.CPFD.Domain
                      , Control.CPFD.Example.Example
                      , Control.CPFD.Example.Sudoku
 

@@ -26,7 +26,7 @@ module Control.CPFD
          FD, FDState
        , runFD, runFD'
        -- * Variables and Domains
-       , FDDomain
+       , FDValue
        , Domain
        , Var
        , Container, ContainerMap (..), ContainerLift (..)
@@ -80,14 +80,14 @@ import Data.STRef (modifySTRef)
 import Data.STRef (newSTRef)
 import Data.STRef (readSTRef)
 import Data.STRef (writeSTRef)
-import Data.Set (Set)
-import qualified Data.Set as Set
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 import Debug.Trace (traceM)
 
 import Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
+import Control.CPFD.Domain (FDValue, Domain)
+import qualified Control.CPFD.Domain as Domain
 
 -- | Monad for constraints on finite domain
 type FD s = WriterT [String] (StateT (FDState s) (ST s))
@@ -130,12 +130,6 @@ fdWrapper tf fd = do
   tell ["Terminated."]
   return a
 
--- | Constraint for domain value
-type FDDomain v = (Ord v, Show v)
-
--- | Domain of variables.
-type Domain = Set
-
 -- | Propagate a domain changing to other domains.
 data VarPropagator s =
   VarPropagator
@@ -161,18 +155,18 @@ instance Show (Var s v) where
   show v = "_" ++ show (varId v)
 
 -- | (for internal use in variable list)
-data NVar s = forall v. FDDomain v => NVar (Var s v)
+data NVar s = forall v. FDValue v => NVar (Var s v)
 
 instance Show (NVar s) where
   show = showNVar'
 
 class ContainerMap c where
   cmapA :: Applicative f =>
-           (forall a. FDDomain a => t a -> f (t' a)) -> c t -> f (c t')
+           (forall a. FDValue a => t a -> f (t' a)) -> c t -> f (c t')
   cmapM :: Monad m =>
-           (forall a. FDDomain a => t a -> m (t' a)) -> c t -> m (c t')
+           (forall a. FDValue a => t a -> m (t' a)) -> c t -> m (c t')
   cmapM f = unwrapMonad . cmapA (WrapMonad . f)
-  fromContainer :: (forall a. FDDomain a => t a -> t') -> c t -> [t']
+  fromContainer :: (forall a. FDValue a => t a -> t') -> c t -> [t']
 
 class ContainerLift c c' where
   cup :: (forall a. a -> t a) -> c' -> c t
@@ -186,7 +180,7 @@ class (ContainerMap c, ContainerLift c c') => Container c c'
 newtype CTraversable t' v t =
   CTraversable { unCTraversable :: t' (t v) } deriving (Eq, Show)
 
-instance (FDDomain v, Traversable t') =>
+instance (FDValue v, Traversable t') =>
          ContainerMap (CTraversable t' v) where
   cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
   fromContainer f (CTraversable ts) = Foldable.toList $ fmap f ts
@@ -231,7 +225,7 @@ traceM' s = do
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
-new :: FDDomain v => Domain v -> FD s (Var s v)
+new :: FDValue v => Domain v -> FD s (Var s v)
 new d = do
   vl <- State.gets varList
   vi <- newVarId
@@ -258,13 +252,13 @@ get v = do
   liftST $ readSTRef (varDomain v)
 
 -- | Set domain of the variable and invoke propagators.
-set :: FDDomain v => Var s v -> Domain v -> FD s ()
+set :: FDValue v => Var s v -> Domain v -> FD s ()
 set v d = do
   let vd = varDomain v
   let vp = varProp v
   old <- liftST $ readSTRef vd
-  let sd   = Set.size d
-  let sold = Set.size old
+  let sd   = Domain.size d
+  let sold = Domain.size old
   if sd < sold
     then do
       liftST $ writeSTRef vd d
@@ -283,7 +277,7 @@ getPropQueue = do
   return $ map (vpName . propProp) $ Queue.toList pq
 
 -- | (for internal)
-enqProp :: FDDomain v => Var s v -> [VarPropagator s] -> FD s ()
+enqProp :: FDValue v => Var s v -> [VarPropagator s] -> FD s ()
 enqProp v = mapM_ enq where
   enq vp = do
     rpq <- State.gets propQueue
@@ -328,23 +322,23 @@ popPropStack = do
 -- Utilities for variable domain
 
 -- | Same as 'new' except to take a list as domain.
-newL :: FDDomain v => [v] -> FD s (Var s v)
-newL d = new (Set.fromList d)
+newL :: FDValue v => [v] -> FD s (Var s v)
+newL d = new (Domain.fromList d)
 
 -- | Same as 'new' except to take a number of variables to create.
-newN :: FDDomain v => Int -> Domain v -> FD s [Var s v]
+newN :: FDValue v => Int -> Domain v -> FD s [Var s v]
 newN n d = replicateM n (new d)
 
 -- | Same as 'newN' except to take a list as domain.
-newNL :: FDDomain v => Int -> [v] -> FD s [Var s v]
+newNL :: FDValue v => Int -> [v] -> FD s [Var s v]
 newNL n d = replicateM n (newL d)
 
 -- | Same as 'new' except to take a Traversable containing domains.
-newT :: (FDDomain v, Traversable t) => t (Domain v) -> FD s (t (Var s v))
+newT :: (FDValue v, Traversable t) => t (Domain v) -> FD s (t (Var s v))
 newT = Traversable.mapM new
 
 -- | Same as 'new' except to take a Traversable containing lists as domains.
-newTL :: (FDDomain v, Traversable t) => t [v] -> FD s (t (Var s v))
+newTL :: (FDValue v, Traversable t) => t [v] -> FD s (t (Var s v))
 newTL = Traversable.mapM newL
 
 -- | Same as 'new' except to take a Container containing domains.
@@ -356,12 +350,12 @@ newCL :: ContainerMap c => c [] -> FD s (c (Var s))
 newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
-getL :: FDDomain v => Var s v -> FD s [v]
-getL v = liftM Set.toList $ get v
+getL :: FDValue v => Var s v -> FD s [v]
+getL v = liftM Domain.toList $ get v
 
 -- | Same as 'get' except to return a Maybe as domain.
-getM :: FDDomain v => Var s v -> FD s (Maybe v)
-getM v = liftM (listToMaybe . Set.toList) $ get v
+getM :: FDValue v => Var s v -> FD s (Maybe v)
+getM v = liftM (listToMaybe . Domain.toList) $ get v
 
 -- | Same as 'get' except to return a list as domain in Container.
 getCL :: ContainerMap c => c (Var s) -> FD s (c [])
@@ -372,20 +366,12 @@ getCM :: ContainerMap c => c (Var s) -> FD s (c Maybe)
 getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
-setS :: FDDomain v => Var s v -> v -> FD s ()
-setS v val = set v (Set.singleton val)
+setS :: FDValue v => Var s v -> v -> FD s ()
+setS v val = set v (Domain.singleton val)
 
 -- | Same as 'set' except to take a list as domain.
-setL :: FDDomain v => Var s v -> [v] -> FD s ()
-setL v d = set v (Set.fromList d)
-
--- | Check if domain is empty
-empty :: Domain v -> Bool
-empty s = Set.size s == 0
-
--- | Check if domain is singleton
-single :: Domain v -> Bool
-single s = Set.size s == 1
+setL :: FDValue v => Var s v -> [v] -> FD s ()
+setL v d = set v (Domain.fromList d)
 
 -- Labeling
 
@@ -417,7 +403,7 @@ pop = do
   mapM_ __pop vs
 
 -- | Label variables specified in Traversable.
-labelT :: (FDDomain v, Traversable t) => t (Var s v) -> FD s [t v]
+labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s [t v]
 labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
@@ -445,7 +431,7 @@ labelC' c nvs =
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
   vdss <- forM nvs $
-          \(NVar v) -> liftM Set.size $ liftST $ readSTRef (varDomain v)
+          \(NVar v) -> liftM Domain.size $ liftST $ readSTRef (varDomain v)
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -459,7 +445,7 @@ add :: Var s v -> VarPropagator s -> FD s ()
 add v p = liftST $ modifySTRef (varProp v) $ \ps -> p:ps
 
 -- | Add a propagator to the variables and invoke it
-add2 :: (FDDomain v1, FDDomain v2) =>
+add2 :: (FDValue v1, FDValue v2) =>
         String -> Var s v1 -> Var s v2 -> FD s () -> FD s ()
 add2 n v1 v2 a = do
   traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
@@ -469,7 +455,7 @@ add2 n v1 v2 a = do
   a
 
 -- | Add a propagator to the variables and invoke it
-adds :: FDDomain v => String -> [Var s v] -> FD s () -> FD s ()
+adds :: FDValue v => String -> [Var s v] -> FD s () -> FD s ()
 adds n vs a = do
   traceM' $ "adds: " ++ n ++ " " ++ show vs
   let vp = VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}
@@ -484,19 +470,19 @@ type ArcPropRule a b = Domain a -> Domain b -> (Domain a, Domain b)
 type ArcConstraint s a b = Var s a -> Var s b -> FD s ()
 
 -- | Create arc constraint from propagator
-arcConstraint :: (FDDomain a, FDDomain b) =>
+arcConstraint :: (FDValue a, FDValue b) =>
                  String -> ArcPropRule a b -> ArcConstraint s a b
 arcConstraint n c x y = add2 n x y $ do
   dx <- get x
   dy <- get y
   let (dx', dy') =
-        if Set.null dx || Set.null dy
-        then (Set.empty, Set.empty)
+        if Domain.null dx || Domain.null dy
+        then (Domain.empty, Domain.empty)
         else c dx dy
   traceM' $ "arcConstraint: " ++ n ++ show (x, y) ++ ": "
     ++ show dx ++ " -> " ++ show dx' ++ ", "
     ++ show dy ++ " -> " ++ show dy'
-  when (Set.size dx < Set.size dx' || Set.size dy < Set.size dy') $
+  when (Domain.size dx < Domain.size dx' || Domain.size dy < Domain.size dy') $
     error $ "arcConstraint: invalid: "
       ++ show dx ++ " -> " ++ show dx' ++ ", "
       ++ show dy ++ " -> " ++ show dy'
@@ -509,137 +495,137 @@ type MultiPropRule v = [Domain v] -> [Domain v]
 type MultiConstraint s v = [Var s v] -> FD s ()
 
 -- | Create multiple-arc constraint from propagator
-multiConstraint :: FDDomain v =>
+multiConstraint :: FDValue v =>
                    String -> MultiPropRule v -> MultiConstraint s v
 multiConstraint n c vs = adds n vs $ do
   ds <- mapM get vs
   let ds' =
-        if any Set.null ds
-        then map (const Set.empty) ds
+        if any Domain.null ds
+        then map (const Domain.empty) ds
         else c ds
   traceM' $ "multiConstraint: " ++ n ++ show vs ++  ": "
     ++ show ds ++ " -> " ++ show ds'
-  when (any (\(d, d') -> Set.size d < Set.size d') $ zip ds ds') $
+  when (any (\(d, d') -> Domain.size d < Domain.size d') $ zip ds ds') $
     error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
   (`mapM_` zip vs ds') $ uncurry set
 
 -- Primitive constraints
 
 -- | Equality constraint
-eq :: FDDomain v => Var s v -> Var s v -> FD s ()
+eq :: FDValue v => Var s v -> Var s v -> FD s ()
 eq = arcConstraint "eq" eqConstraint
 
-eqConstraint :: FDDomain v => ArcPropRule v v
+eqConstraint :: FDValue v => ArcPropRule v v
 eqConstraint vx vy = (vz, vz) where
-  vz = vx `Set.intersection` vy
+  vz = vx `Domain.intersection` vy
 
 -- | Inequality (<=) constraint
-le :: FDDomain v => Var s v -> Var s v -> FD s ()
+le :: FDValue v => Var s v -> Var s v -> FD s ()
 le = arcConstraint "le" leConstraint
 
-leConstraint :: FDDomain v => ArcPropRule v v
+leConstraint :: FDValue v => ArcPropRule v v
 leConstraint vx vy = (vx', vy') where
-  minX = Set.findMin vx
-  maxY = Set.findMax vy
-  vx' = Set.filter (<= maxY) vx
-  vy' = Set.filter (>= minX) vy
+  minX = Domain.findMin vx
+  maxY = Domain.findMax vy
+  vx' = Domain.filter (<= maxY) vx
+  vy' = Domain.filter (>= minX) vy
 
 -- | Inequality (/=) constraint
-neq :: FDDomain v => Var s v -> Var s v -> FD s ()
+neq :: FDValue v => Var s v -> Var s v -> FD s ()
 neq = arcConstraint "neq" neqConstraint
 
-neqConstraint :: FDDomain v => ArcPropRule v v
+neqConstraint :: FDValue v => ArcPropRule v v
 neqConstraint vx vy
-  | single vx && single vy =
+  | Domain.single vx && Domain.single vy =
     if vx == vy
-    then (Set.empty, Set.empty)
+    then (Domain.empty, Domain.empty)
     else (vx, vy)
-  | single vx && vx `Set.isProperSubsetOf` vy = (vx, vy Set.\\ vx)
-  | single vy && vy `Set.isProperSubsetOf` vx = (vx Set.\\ vy, vy)
+  | Domain.single vx && vx `Domain.isProperSubsetOf` vy = (vx, vy Domain.\\ vx)
+  | Domain.single vy && vy `Domain.isProperSubsetOf` vx = (vx Domain.\\ vy, vy)
   | otherwise = (vx, vy)
 
 -- | Differ from each other in list
-alldiff :: FDDomain v => [Var s v] -> FD s ()
+alldiff :: FDValue v => [Var s v] -> FD s ()
 alldiff []     = return ()
 alldiff (v:vs) = do
   mapM_ (v `neq`) vs
   alldiff vs
 
 -- | Differ from each other in Foldable
-alldiffF :: (FDDomain v, Foldable f) => f (Var s v) ->FD s ()
+alldiffF :: (FDValue v, Foldable f) => f (Var s v) ->FD s ()
 alldiffF = alldiff . Foldable.toList
 
 -- | x == y (mod m)
-eqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
+eqmod :: (FDValue v, Integral v) => v -> Var s v -> Var s v -> FD s ()
 eqmod m = arcConstraint "eqmod" (eqmodConstraint m)
 
 eqmodConstraint :: Integral v => v -> ArcPropRule v v
 eqmodConstraint m vx vy = (vx', vy') where
-  vmz = Set.map (`mod` m) vx `Set.intersection` Set.map (`mod` m) vy
-  vx' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vx
-  vy' = Set.filter (\e -> (e `mod` m) `Set.member` vmz) vy
+  vmz = Domain.map (`mod` m) vx `Domain.intersection` Domain.map (`mod` m) vy
+  vx' = Domain.filter (\e -> (e `mod` m) `Domain.member` vmz) vx
+  vy' = Domain.filter (\e -> (e `mod` m) `Domain.member` vmz) vy
 
 -- | x /= y (mod m)
-neqmod :: (FDDomain v, Integral v) => v -> Var s v -> Var s v -> FD s ()
+neqmod :: (FDValue v, Integral v) => v -> Var s v -> Var s v -> FD s ()
 neqmod m = arcConstraint "neqmod" (neqmodConstraint m)
 
 neqmodConstraint :: Integral v => v -> ArcPropRule v v
 neqmodConstraint m vx vy = (vx'', vy'') where
-  vmx = Set.map (`mod` m) vx
-  vmy = Set.map (`mod` m) vy
-  vy' = Set.filter (\e -> (e `mod` m) `Set.notMember` vmx) vy
-  vx' = Set.filter (\e -> (e `mod` m) `Set.notMember` vmy) vx
+  vmx = Domain.map (`mod` m) vx
+  vmy = Domain.map (`mod` m) vy
+  vy' = Domain.filter (\e -> (e `mod` m) `Domain.notMember` vmx) vy
+  vx' = Domain.filter (\e -> (e `mod` m) `Domain.notMember` vmy) vx
   (vx'', vy'')
-    | single vmx && single vmy =
+    | Domain.single vmx && Domain.single vmy =
       if vmx == vmy
-      then (Set.empty, Set.empty)
+      then (Domain.empty, Domain.empty)
       else (vx, vy)
-    | single vmx && vmx `Set.isProperSubsetOf` vmy = (vx, vy')
-    | single vmy && vmy `Set.isProperSubsetOf` vmx = (vx', vy)
+    | Domain.single vmx && vmx `Domain.isProperSubsetOf` vmy = (vx, vy')
+    | Domain.single vmy && vmy `Domain.isProperSubsetOf` vmx = (vx', vy)
     | otherwise = (vx, vy)
 
 -- | Differ from each other in list (mod m)
-alldiffmod :: (FDDomain v, Integral v) => v -> [Var s v] -> FD s ()
+alldiffmod :: (FDValue v, Integral v) => v -> [Var s v] -> FD s ()
 alldiffmod _ []     = return ()
 alldiffmod m (v:vs) = do
   mapM_ (neqmod m v) vs
   alldiffmod m vs
 
 -- | add' c x y means c = x + y (c is constant value)
-add' :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
+add' :: (FDValue v, Num v) => v -> Var s v -> Var s v -> FD s ()
 add' c = arcConstraint "add'" (addConstraint c)
 
 addConstraint :: (Eq v, Num v) => v -> ArcPropRule v v
 addConstraint c vx vy = (vx', vy') where
-  vx' = Set.filter (\ix -> any (\iy -> ix+iy==c) $ Set.toList vy) vx
-  vy' = Set.filter (\iy -> any (\ix -> ix+iy==c) $ Set.toList vx) vy
+  vx' = Domain.filter (\ix -> any (\iy -> ix+iy==c) $ Domain.toList vy) vx
+  vy' = Domain.filter (\iy -> any (\ix -> ix+iy==c) $ Domain.toList vx) vy
 
 -- | add3 z x y means z = x + y
-add3 :: (FDDomain v, Num v) => Var s v -> Var s v -> Var s v -> FD s ()
+add3 :: (FDValue v, Num v) => Var s v -> Var s v -> Var s v -> FD s ()
 add3 z x y = multiConstraint "add3" add3Constraint [x, y, z]
 
 add3Constraint :: (Ord a, Num a) => MultiPropRule a
 add3Constraint [vx, vy, vz] = [vx', vy', vz'] where
-  minZ = Set.findMin vx + Set.findMin vy
-  maxZ = Set.findMax vx + Set.findMax vy
-  vz' = Set.filter (\e -> minZ <= e && e <= maxZ) vz
+  minZ = Domain.findMin vx + Domain.findMin vy
+  maxZ = Domain.findMax vx + Domain.findMax vy
+  vz' = Domain.filter (\e -> minZ <= e && e <= maxZ) vz
   --
-  minX = Set.findMin vz - Set.findMax vy
-  maxX = Set.findMax vz - Set.findMin vy
-  vx' = Set.filter (\e -> minX <= e && e <= maxX) vx
+  minX = Domain.findMin vz - Domain.findMax vy
+  maxX = Domain.findMax vz - Domain.findMin vy
+  vx' = Domain.filter (\e -> minX <= e && e <= maxX) vx
   --
-  minY = Set.findMin vz - Set.findMax vx
-  maxY = Set.findMax vz - Set.findMin vx
-  vy' = Set.filter (\e -> minY <= e && e <= maxY) vy
+  minY = Domain.findMin vz - Domain.findMax vx
+  maxY = Domain.findMax vz - Domain.findMin vx
+  vy' = Domain.filter (\e -> minY <= e && e <= maxY) vy
 
 -- | sub c x y means x - y == c (c is constant value)
-sub :: (FDDomain v, Num v) => v -> Var s v -> Var s v -> FD s ()
+sub :: (FDValue v, Num v) => v -> Var s v -> Var s v -> FD s ()
 sub c = arcConstraint "sub" (subConstraint c)
 
 subConstraint :: (Eq a, Num a) => a -> ArcPropRule a a
 subConstraint c vx vy = (vx', vy') where
-  vx' = Set.filter (\ix -> any (\iy -> ix==iy+c) $ Set.toList vy) vx
-  vy' = Set.filter (\iy -> any (\ix -> ix==iy+c) $ Set.toList vx) vy
+  vx' = Domain.filter (\ix -> any (\iy -> ix==iy+c) $ Domain.toList vy) vx
+  vy' = Domain.filter (\iy -> any (\ix -> ix==iy+c) $ Domain.toList vx) vy
 
 
 -- Internal Tests

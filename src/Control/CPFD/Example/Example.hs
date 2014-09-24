@@ -241,7 +241,7 @@ newtype CPairList x y t =
   CPairList { unPairList :: PairList (t x) (t y) }
   deriving (Show, Eq, Ord)
 
-instance (FDDomain x, FDDomain y) =>
+instance (FDValue x, FDValue y) =>
          ContainerMap (CPairList x y) where
   cmapA f (CPairList ps) =
     CPairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
