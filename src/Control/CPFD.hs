@@ -63,8 +63,8 @@ import Control.Monad (liftM)
 import Control.Monad (replicateM)
 import Control.Monad (unless)
 import Control.Monad (when)
-import Control.Monad.ST (ST)
-import Control.Monad.ST (runST)
+import Control.Monad.ST.Lazy (ST)
+import Control.Monad.ST.Lazy (runST)
 import Control.Monad.State (StateT)
 import Control.Monad.State (evalStateT)
 import qualified Control.Monad.State as State
@@ -75,11 +75,11 @@ import Control.Monad.Writer (tell)
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.Maybe (listToMaybe)
-import Data.STRef (STRef)
-import Data.STRef (modifySTRef)
-import Data.STRef (newSTRef)
-import Data.STRef (readSTRef)
-import Data.STRef (writeSTRef)
+import Data.STRef.Lazy (STRef)
+import Data.STRef.Lazy (modifySTRef)
+import Data.STRef.Lazy (newSTRef)
+import Data.STRef.Lazy (readSTRef)
+import Data.STRef.Lazy (writeSTRef)
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 import Debug.Trace (traceM)
@@ -413,7 +413,7 @@ labelC c = labelC' c (fromContainer NVar c)
 labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [c']
 labelC' c nvs =
   case nvs of
-    []        -> do
+    [] -> do
       c' <- getCL c
       return [cdown head c']
     _ -> do
@@ -459,7 +459,7 @@ adds :: FDValue v => String -> [Var s v] -> FD s () -> FD s ()
 adds n vs a = do
   traceM' $ "adds: " ++ n ++ " " ++ show vs
   let vp = VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}
-  mapM_ (\v -> add v vp) vs
+  mapM_ (`add` vp) vs
   a
 
 -- Utilities for variable domain propagator
