@@ -32,7 +32,7 @@ module Control.CPFD
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newC, newCL
-       , set, setS, setL
+       , set, setS, setL, get, getL
        -- * Constraint Store
        , ArcPropRule, ArcConstraint, arcConstraint
        , MultiPropRule, MultiConstraint, multiConstraint
@@ -632,50 +632,50 @@ subConstraint c vx vy = (vx', vy') where
 
 {-|
 >>> testL
-(fromList [1,2,3,4,5,6,7,8,9,10],fromList [1,2,3,4,5])
+([1,2,3,4,5,6,7,8,9,10],[1,2,3,4,5])
 -}
-testL :: (Domain Int, Domain Int)
+testL :: ([Int], [Int])
 testL = runFD $ do
   v <- newL [1..10]
-  val <- get v
+  val <- getL v
   setL v [1..5]
-  val' <- get v
+  val' <- getL v
   return (val, val')
 
 {-|
 >>> testTLProp
-(fromList [5,7,9],fromList [5,7,9])
+([5,7,9],[5,7,9])
 -}
-testTLProp :: (Domain Int, Domain Int)
+testTLProp :: ([Int], [Int])
 testTLProp = runFD $ do
   [x, y] <- newTL [[1,3..11], [5..10]]
   x `eq` y
-  dx <- get x
-  dy <- get y
+  dx <- getL x
+  dy <- getL y
   return (dx, dy)
 
 {-|
 >>> testAlldiff
-(fromList [1,3,7,9,11],fromList [6,7,8,9,10],fromList [5])
+([1,3,7,9,11],[6,7,8,9,10],[5])
 -}
-testAlldiff :: (Domain Int, Domain Int, Domain Int)
+testAlldiff :: ([Int], [Int], [Int])
 testAlldiff = runFD $ do
   [x, y, z] <- newTL [[1,3..11], [5..10], [5]]
   alldiff [x, y, z]
-  dx <- get x
-  dy <- get y
-  dz <- get z
+  dx <- getL x
+  dy <- getL y
+  dz <- getL z
   return (dx, dy, dz)
 
 {-|
 >>> testProp
-(fromList [5,7,9],fromList [5,7,9])
+([5,7,9],[5,7,9])
 -}
-testProp :: (Domain Int, Domain Int)
+testProp :: ([Int], [Int])
 testProp = runFD $ do
   x <- newL [1,3..11]
   y <- newL [5..10]
   x `eq` y
-  dx <- get x
-  dy <- get y
+  dx <- getL x
+  dy <- getL y
   return (dx, dy)

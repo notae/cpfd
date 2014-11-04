@@ -204,28 +204,29 @@ mt :: Var s Int -> Var s Bool -> FD s ()
 mt = arcConstraint "mt" mtConstraint
 
 {-|
->>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True,False])
-(fromList [1,2,3,4,5,6,7,8,9,10],fromList [False,True])
+>>> let toList (x, y) = (Domain.toList x, Domain.toList y)
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True,False])
+([1,2,3,4,5,6,7,8,9,10],[False,True])
 
->>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [False])
-(fromList [1,3,5,7,9],fromList [False])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True])
+([2,4,6,8,10],[True])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [False])
+([1,3,5,7,9],[False])
 
->>> mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [True,False])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True,False])
-(fromList [1,3,5,7,9],fromList [False])
+>>> toList $ mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [True,False])
+([2,4,6,8,10],[True])
+>>> toList $ mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True,False])
+([1,3,5,7,9],[False])
 
->>> mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [False])
-(fromList [],fromList [])
->>> mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True])
-(fromList [],fromList [])
+>>> toList $ mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [False])
+([],[])
+>>> toList $ mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True])
+([],[])
 
->>> mtConstraint (Domain.fromList []) (Domain.fromList [True,False])
-(fromList [],fromList [])
->>> mtConstraint (Domain.fromList [1..10]) (Domain.fromList [])
-(fromList [],fromList [])
+>>> toList $ mtConstraint (Domain.fromList []) (Domain.fromList [True,False])
+([],[])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [])
+([],[])
 -}
 mtConstraint :: ArcPropRule Int Bool
 mtConstraint vx vy = (vx', vy') where
