@@ -271,3 +271,14 @@ testMT = do
                            , ([4..5], [True, False]) ]
   forM_ v $ uncurry mt
   labelC $ CPairList v
+
+{-|
+>>> take 1 $ runFD testLazy
+[[1,1,1]]
+-}
+testLazy :: FD s [[Int]]
+testLazy = do
+  x <- newL [1..100]
+  y <- newL [1..100]
+  z <- newL [1..100]
+  labelT [x, y, z]
