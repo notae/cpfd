@@ -55,31 +55,17 @@ module Control.CPFD
        , alldiffmod
        ) where
 
-import Control.Applicative ((<$>))
-import Control.Applicative (Applicative)
-import Control.Applicative (WrappedMonad (..))
-import Control.Monad (forM)
-import Control.Monad (liftM)
-import Control.Monad (replicateM)
-import Control.Monad (unless)
-import Control.Monad (when)
-import Control.Monad.ST.Lazy (ST)
-import Control.Monad.ST.Lazy (runST)
-import Control.Monad.State (StateT)
-import Control.Monad.State (evalStateT)
+import Control.Applicative ((<$>), Applicative, WrappedMonad (..))
+import Control.Monad (forM, liftM, replicateM, unless, when)
+import Control.Monad.ST.Lazy (ST, runST)
+import Control.Monad.State (StateT, evalStateT)
 import qualified Control.Monad.State as State
 import Control.Monad.Trans (lift)
-import Control.Monad.Writer (WriterT)
-import Control.Monad.Writer (runWriterT)
-import Control.Monad.Writer (tell)
+import Control.Monad.Writer (WriterT, runWriterT, tell)
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.Maybe (listToMaybe)
-import Data.STRef.Lazy (STRef)
-import Data.STRef.Lazy (modifySTRef)
-import Data.STRef.Lazy (newSTRef)
-import Data.STRef.Lazy (readSTRef)
-import Data.STRef.Lazy (writeSTRef)
+import Data.STRef.Lazy (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 import Debug.Trace (traceM)
