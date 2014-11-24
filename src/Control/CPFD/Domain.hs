@@ -18,7 +18,8 @@ module Control.CPFD.Domain
        -- * Operators
        , (\\)
        -- * Query
-       , null, single, size, member, notMember, isProperSubsetOf
+       , null, single, size, member, notMember
+       , isSubsetOf, isProperSubsetOf
        -- * Construction
        , empty, singleton
        -- * Combine
@@ -84,6 +85,9 @@ findMax = Set.findMax
 
 filter :: (v -> Bool) -> Domain v -> Domain v
 filter = Set.filter
+
+isSubsetOf :: Ord v => Domain v -> Domain v -> Bool
+isSubsetOf = Set.isSubsetOf
 
 isProperSubsetOf :: Ord v => Domain v -> Domain v -> Bool
 isProperSubsetOf = Set.isProperSubsetOf
