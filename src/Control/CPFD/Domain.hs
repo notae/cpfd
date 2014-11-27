@@ -41,7 +41,7 @@ import Prelude hiding (null, filter, map)
 import Data.Set (Set)
 import qualified Data.Set as Set
 
--- | Constraint for domain value
+-- | Type constraint for domain value
 type FDValue v = (Ord v, Show v)
 
 -- | Domain of variables.
