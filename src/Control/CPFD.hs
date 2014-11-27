@@ -19,6 +19,7 @@ Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Control.CPFD
        (
@@ -55,17 +56,19 @@ module Control.CPFD
        , alldiffmod
        ) where
 
-import Control.Applicative ((<$>), Applicative, WrappedMonad (..))
+import Control.Applicative ((<$>), (<*>), Applicative, WrappedMonad (..))
 import Control.Monad (forM, liftM, replicateM, unless, when)
 import Control.Monad.ST.Lazy (ST, runST)
 import Control.Monad.State (StateT, evalStateT)
 import qualified Control.Monad.State as State
 import Control.Monad.Trans (lift)
-import Control.Monad.Writer (WriterT, runWriterT, tell)
+import Control.Monad.Writer (WriterT, runWriterT)
+import qualified Control.Monad.Writer as Writer
 import Data.Foldable (Foldable)
 import qualified Data.Foldable as Foldable
 import Data.Maybe (listToMaybe)
-import Data.STRef.Lazy (STRef, modifySTRef, newSTRef, readSTRef, writeSTRef)
+import Data.STRef.Lazy (STRef)
+import qualified Data.STRef.Lazy as STRef
 import Data.Traversable (Traversable)
 import qualified Data.Traversable as Traversable
 import Debug.Trace (traceM)
@@ -76,11 +79,48 @@ import Control.CPFD.Domain (FDValue, Domain)
 import qualified Control.CPFD.Domain as Domain
 
 -- | Monad for constraints on finite domain
-type FD s = WriterT [String] (StateT (FDState s) (ST s))
+newtype FD s a =
+  FD { unFD :: WriterT [String] (StateT (FDState s) (ST s)) a }
+  deriving (Functor, Applicative, Monad)
 
 -- | (for internal use)
 liftST :: ST s a -> FD s a
-liftST = lift . lift
+liftST = FD . lift . lift
+
+-- | (for internal use)
+newSTRef :: a -> FD s (STRef s a)
+newSTRef = liftST . STRef.newSTRef
+
+-- | (for internal use)
+readSTRef :: STRef s a -> FD s a
+readSTRef = liftST . STRef.readSTRef
+
+-- | (for internal use)
+writeSTRef :: STRef s a -> a -> FD s ()
+writeSTRef r a = liftST $ STRef.writeSTRef r a
+
+-- | (for internal use)
+modifySTRef :: STRef s a -> (a -> a) -> FD s ()
+modifySTRef r f = liftST $ STRef.modifySTRef r f
+
+-- | (for internal use)
+liftState :: StateT (FDState s) (ST s) a -> FD s a
+liftState = FD . lift
+
+-- | (for internal use)
+put :: FDState s -> FD s ()
+put = liftState . State.put
+
+-- | (for internal use)
+gets :: (FDState s -> a) -> FD s a
+gets = liftState . State.gets
+
+-- | (for internal use)
+liftWriter :: WriterT [String] (StateT (FDState s) (ST s)) a -> FD s a
+liftWriter = FD
+
+traceFD :: String -> FD s ()
+traceFD s = liftWriter $ Writer.tell [s]
 
 -- | (for internal use)
 data FDState s =
@@ -93,27 +133,27 @@ data FDState s =
 
 -- | Run FD monad
 runFD :: (forall s. FD s a) -> a
-runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ fdWrapper False fd
+runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper False fd
 
 -- | Run FD monad with trace for debug
 runFD' :: (forall s. FD s a) -> (a, [String])
-runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ fdWrapper True fd
+runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper True fd
 
 -- | (for internal use)
 fdWrapper :: Bool -> FD s a -> FD s a
 fdWrapper tf fd = do
   vl <- newVarList
-  rvi <- liftST $ newSTRef 0
-  rpq <- liftST $ newSTRef Queue.empty
-  rst <- liftST $ newSTRef []
-  State.put FDState { varList = vl
-                    , lastVarId = rvi
-                    , propQueue = rpq
-                    , propStack = rst
-                    , traceFlag = tf }
-  tell ["Initialized."]
+  rvi <- newSTRef 0
+  rpq <- newSTRef Queue.empty
+  rst <- newSTRef []
+  put FDState { varList = vl
+              , lastVarId = rvi
+              , propQueue = rpq
+              , propStack = rst
+              , traceFlag = tf }
+  traceFD "Initialized."
   a <- fd
-  tell ["Terminated."]
+  traceFD "Terminated."
   return a
 
 -- | Propagate a domain changing to other domains.
@@ -184,18 +224,18 @@ type VarList s = STRef s [NVar s]
 
 -- | Create an empty variable list.
 newVarList :: FD s (VarList s)
-newVarList = liftST $ newSTRef []
+newVarList = newSTRef []
 
 getVarList :: FD s [NVar s]
 getVarList = do
-  vl <- State.gets varList
-  liftST $ readSTRef vl
+  vl <- gets varList
+  readSTRef vl
 
 -- | (for debug)
 showNVar :: NVar s -> FD s String
 showNVar (NVar v) = do
-  d <- liftST $ readSTRef (varDomain v)
-  s <- liftST $ readSTRef (varStack v)
+  d <- readSTRef (varDomain v)
+  s <- readSTRef (varStack v)
   return $ show (varId v, d, s)
 
 -- | (for debug)
@@ -205,7 +245,7 @@ showNVar' (NVar v) = "_" ++ show (varId v)
 -- | (for debug)
 traceM' :: String -> FD s ()
 traceM' s = do
-  f <- State.gets traceFlag
+  f <- gets traceFlag
   when f $ traceM s
 
 -- Primitives for variable domain
@@ -213,42 +253,42 @@ traceM' s = do
 -- | Create a new variable with domain.
 new :: FDValue v => Domain v -> FD s (Var s v)
 new d = do
-  vl <- State.gets varList
+  vl <- gets varList
   vi <- newVarId
-  vd <- liftST $ newSTRef d
-  vs <- liftST $ newSTRef []
-  vp <- liftST $ newSTRef []
+  vd <- newSTRef d
+  vs <- newSTRef []
+  vp <- newSTRef []
   let v = Var { varId = vi, varDomain = vd, varStack = vs, varProp = vp }
-  liftST $ modifySTRef vl $ \nvs -> NVar v : nvs
+  modifySTRef vl $ \nvs -> NVar v : nvs
   return v
 
 -- | (for internal)
 newVarId :: FD s Int
 newVarId = do
-  rvi <- State.gets lastVarId
-  vi <- liftST $ readSTRef rvi
+  rvi <- gets lastVarId
+  vi <- readSTRef rvi
   let vi' = vi + 1
-  liftST $ writeSTRef rvi vi'
+  writeSTRef rvi vi'
   return vi'
 
 -- | Get domain of the variable.
 get :: Var s v -> FD s (Domain v)
 get v = do
   execProp
-  liftST $ readSTRef (varDomain v)
+  readSTRef (varDomain v)
 
 -- | Set domain of the variable and invoke propagators.
 set :: FDValue v => Var s v -> Domain v -> FD s ()
 set v d = do
   let vd = varDomain v
   let vp = varProp v
-  old <- liftST $ readSTRef vd
+  old <- readSTRef vd
   let sd   = Domain.size d
   let sold = Domain.size old
   if sd < sold
     then do
-      liftST $ writeSTRef vd d
-      p <- liftST $ readSTRef vp
+      writeSTRef vd d
+      p <- readSTRef vp
       enqProp v p
     else unless (sd == sold) $ do
       pq <- getPropQueue
@@ -258,30 +298,30 @@ set v d = do
 -- | (for debug)
 getPropQueue :: FD s [String]
 getPropQueue = do
-  rpq <- State.gets propQueue
-  pq <- liftST $ readSTRef rpq
+  rpq <- gets propQueue
+  pq <- readSTRef rpq
   return $ map (vpName . propProp) $ Queue.toList pq
 
 -- | (for internal)
 enqProp :: FDValue v => Var s v -> [VarPropagator s] -> FD s ()
 enqProp v = mapM_ enq where
   enq vp = do
-    rpq <- State.gets propQueue
+    rpq <- gets propQueue
     let nv = NVar v
     let p = Propagator { propVar = nv, propProp = vp }
-    liftST $ modifySTRef rpq $ \pq -> Queue.enq p pq
+    modifySTRef rpq $ \pq -> Queue.enq p pq
     traceM' $ "enqProp: " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
 
 -- | (for internal)
 execProp :: FD s ()
 execProp = do
-  rpq <- State.gets propQueue
-  q <- liftST $ readSTRef rpq
+  rpq <- gets propQueue
+  q <- readSTRef rpq
   unless (Queue.null q) $ do
     let (p, q') = Queue.deq q
     let v  = propVar  p
     let vp = propProp p
-    liftST $ writeSTRef rpq q'
+    writeSTRef rpq q'
     traceM' $ "execProp: > " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
     vpAction vp
     traceM' $ "execProp: < " ++ show v ++ " -> " ++ vpName vp ++ show (vpVars vp)
@@ -290,20 +330,20 @@ execProp = do
 -- | (for debug)
 getPropStack :: FD s [String]
 getPropStack = do
-  rst <- State.gets propStack
-  liftST $ readSTRef rst
+  rst <- gets propStack
+  readSTRef rst
 
 -- | (for debug)
 pushPropStack :: String -> FD s ()
 pushPropStack n = do
-  rst <- State.gets propStack
-  liftST $ modifySTRef rst $ \st -> n:st
+  rst <- gets propStack
+  modifySTRef rst $ \st -> n:st
 
 -- | (for debug)
 popPropStack :: FD s ()
 popPropStack = do
-  rst <- State.gets propStack
-  liftST $ modifySTRef rst $ \(_:st) -> st
+  rst <- gets propStack
+  modifySTRef rst $ \(_:st) -> st
 
 -- Utilities for variable domain
 
@@ -337,11 +377,11 @@ newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
 getL :: FDValue v => Var s v -> FD s [v]
-getL v = liftM Domain.toList $ get v
+getL v = Domain.toList <$> get v
 
 -- | Same as 'get' except to return a Maybe as domain.
 getM :: FDValue v => Var s v -> FD s (Maybe v)
-getM v = liftM (listToMaybe . Domain.toList) $ get v
+getM v = (listToMaybe . Domain.toList) <$> get v
 
 -- | Same as 'get' except to return a list as domain in Container.
 getCL :: ContainerMap c => c (Var s) -> FD s (c [])
@@ -363,18 +403,18 @@ setL v d = set v (Domain.fromList d)
 
 -- | (for debug)
 getStack :: Var s v -> FD s [Domain v]
-getStack v = liftST $ readSTRef (varStack v)
+getStack v = readSTRef (varStack v)
 
 __push :: NVar s -> FD s ()
 __push (NVar v) = do
-  d <- liftST $ readSTRef (varDomain v)
-  liftST $ modifySTRef (varStack v) $ \ds -> d:ds
+  d <- readSTRef (varDomain v)
+  modifySTRef (varStack v) $ \ds -> d:ds
 
 __pop :: NVar s -> FD s ()
 __pop (NVar v) = do
-  (d:ds) <- liftST $ readSTRef (varStack v)
-  liftST $ writeSTRef (varDomain v) d
-  liftST $ writeSTRef (varStack v) ds
+  (d:ds) <- readSTRef (varStack v)
+  writeSTRef (varDomain v) d
+  writeSTRef (varStack v) ds
 
 push :: FD s ()
 push = do
@@ -417,7 +457,7 @@ labelC' c nvs =
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
   vdss <- forM nvs $
-          \(NVar v) -> liftM Domain.size $ liftST $ readSTRef (varDomain v)
+          \(NVar v) -> Domain.size <$> readSTRef (varDomain v)
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -428,7 +468,7 @@ deleteFindMin nvs = do
 
 -- | Add a propagator to the variable
 add :: Var s v -> VarPropagator s -> FD s ()
-add v p = liftST $ modifySTRef (varProp v) $ \ps -> p:ps
+add v p = modifySTRef (varProp v) $ \ps -> p:ps
 
 -- | Add a propagator to the variables and invoke it
 add2 :: (FDValue v1, FDValue v2) =>
