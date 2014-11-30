@@ -12,14 +12,14 @@ over multiple finite domain in Haskell.
 Originally from: <http://overtond.blogspot.jp/2008/07/pre.html>
 -}
 
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE ExistentialQuantification  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Control.CPFD
        (
@@ -56,27 +56,29 @@ module Control.CPFD
        , alldiffmod
        ) where
 
-import Control.Applicative ((<$>), (<*>), Applicative, WrappedMonad (..))
-import Control.Monad (forM, liftM, replicateM, unless, when)
-import Control.Monad.ST.Lazy (ST, runST)
-import Control.Monad.State (StateT, evalStateT)
-import qualified Control.Monad.State as State
-import Control.Monad.Trans (lift)
-import Control.Monad.Writer (WriterT, runWriterT)
-import qualified Control.Monad.Writer as Writer
-import Data.Foldable (Foldable)
-import qualified Data.Foldable as Foldable
-import Data.Maybe (listToMaybe)
-import Data.STRef.Lazy (STRef)
-import qualified Data.STRef.Lazy as STRef
-import Data.Traversable (Traversable)
-import qualified Data.Traversable as Traversable
-import Debug.Trace (traceM)
+import           Control.Applicative         (Applicative, WrappedMonad (..),
+                                              (<$>), (<*>))
+import           Control.Monad               (forM, liftM, replicateM, unless,
+                                              when)
+import           Control.Monad.ST.Lazy       (ST, runST)
+import           Control.Monad.State         (StateT, evalStateT)
+import qualified Control.Monad.State         as State
+import           Control.Monad.Trans         (lift)
+import           Control.Monad.Writer        (WriterT, runWriterT)
+import qualified Control.Monad.Writer        as Writer
+import           Data.Foldable               (Foldable)
+import qualified Data.Foldable               as Foldable
+import           Data.Maybe                  (listToMaybe)
+import           Data.STRef.Lazy             (STRef)
+import qualified Data.STRef.Lazy             as STRef
+import           Data.Traversable            (Traversable)
+import qualified Data.Traversable            as Traversable
+import           Debug.Trace                 (traceM)
 
-import Control.CPFD.Internal.Queue (Queue)
+import           Control.CPFD.Domain         (Domain, FDValue)
+import qualified Control.CPFD.Domain         as Domain
+import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
-import Control.CPFD.Domain (FDValue, Domain)
-import qualified Control.CPFD.Domain as Domain
 
 -- | Monad for constraints on finite domain
 newtype FD s a =
@@ -125,7 +127,7 @@ traceFD s = liftWriter $ Writer.tell [s]
 -- | (for internal use)
 data FDState s =
   FDState
-  { varList :: VarList s
+  { varList   :: VarList s
   , lastVarId :: STRef s Int
   , propQueue :: STRef s (Queue (Propagator s))
   , propStack :: STRef s [String]
@@ -172,7 +174,7 @@ data Propagator s =
 -- | Finite domain variable
 data Var s v =
   Var
-  { varId :: Int
+  { varId     :: Int
   , varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
   , varProp   :: STRef s [VarPropagator s] }

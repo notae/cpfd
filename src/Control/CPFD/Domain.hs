@@ -37,9 +37,9 @@ module Control.CPFD.Domain
        )
        where
 
-import Prelude hiding (null, filter, map)
-import Data.Set (Set)
+import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Prelude  hiding (filter, map, null)
 
 -- | Type constraint for domain value
 type FDValue v = (Ord v, Show v)

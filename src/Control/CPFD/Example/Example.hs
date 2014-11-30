@@ -8,20 +8,20 @@ Stability   : experimental
 Portability : POSIX
 -}
 
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Control.CPFD.Example.Example where
 
-import Control.Applicative ((<$>), (<*>))
-import Control.CPFD
+import           Control.Applicative ((<$>), (<*>))
+import           Control.CPFD
 import qualified Control.CPFD.Domain as Domain
-import Control.Monad (forM_)
-import Data.List (sort)
-import Data.Traversable (traverse)
+import           Control.Monad       (forM_)
+import           Data.List           (sort)
+import           Data.Traversable    (traverse)
 
 
 {-|
