@@ -13,7 +13,7 @@ module Control.CPFD.Internal.Queue
          Queue, empty, null, fromList, toList, enq, deq
        ) where
 
-import Prelude hiding (null)
+import           Prelude hiding (null)
 import qualified Prelude as Prelude
 
 data Queue a = Queue [a] [a] deriving (Show)

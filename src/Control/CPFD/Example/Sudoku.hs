@@ -13,10 +13,10 @@ Originally from:
 
 module Control.CPFD.Example.Sudoku where
 
-import Control.CPFD
-import Control.Monad (when)
-import Control.Monad (zipWithM_)
-import Data.List (transpose)
+import           Control.CPFD
+import           Control.Monad (when)
+import           Control.Monad (zipWithM_)
+import           Data.List     (transpose)
 
 type Puzzle = [Int]
 

@@ -8,21 +8,20 @@ Stability   : experimental
 Portability : POSIX
 -}
 
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Control.CPFD.Example.Example where
 
-import Control.Applicative ((<$>))
-import Control.Applicative ((<*>))
-import Control.CPFD
-import Control.Monad (forM_)
-import Data.List (sort)
-import Data.Traversable (traverse)
-import qualified Data.Set as Set
+import           Control.Applicative ((<$>), (<*>))
+import           Control.CPFD
+import qualified Control.CPFD.Domain as Domain
+import           Control.Monad       (forM_)
+import           Data.List           (sort)
+import           Data.Traversable    (traverse)
 
 
 {-|
@@ -204,33 +203,34 @@ mt :: Var s Int -> Var s Bool -> FD s ()
 mt = arcConstraint "mt" mtConstraint
 
 {-|
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True,False])
-(fromList [1,2,3,4,5,6,7,8,9,10],fromList [False,True])
+>>> let toList (x, y) = (Domain.toList x, Domain.toList y)
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True,False])
+([1,2,3,4,5,6,7,8,9,10],[False,True])
 
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [True])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [False])
-(fromList [1,3,5,7,9],fromList [False])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [True])
+([2,4,6,8,10],[True])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [False])
+([1,3,5,7,9],[False])
 
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [True,False])
-(fromList [2,4,6,8,10],fromList [True])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True,False])
-(fromList [1,3,5,7,9],fromList [False])
+>>> toList $ mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [True,False])
+([2,4,6,8,10],[True])
+>>> toList $ mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True,False])
+([1,3,5,7,9],[False])
 
->>> mtConstraint (Set.fromList [2,4..10]) (Set.fromList [False])
-(fromList [],fromList [])
->>> mtConstraint (Set.fromList [1,3..9]) (Set.fromList [True])
-(fromList [],fromList [])
+>>> toList $ mtConstraint (Domain.fromList [2,4..10]) (Domain.fromList [False])
+([],[])
+>>> toList $ mtConstraint (Domain.fromList [1,3..9]) (Domain.fromList [True])
+([],[])
 
->>> mtConstraint (Set.fromList []) (Set.fromList [True,False])
-(fromList [],fromList [])
->>> mtConstraint (Set.fromList [1..10]) (Set.fromList [])
-(fromList [],fromList [])
+>>> toList $ mtConstraint (Domain.fromList []) (Domain.fromList [True,False])
+([],[])
+>>> toList $ mtConstraint (Domain.fromList [1..10]) (Domain.fromList [])
+([],[])
 -}
 mtConstraint :: ArcPropRule Int Bool
 mtConstraint vx vy = (vx', vy') where
-  vx' = Set.filter (\x -> (x `mod` 2 == 0) `Set.member` vy) vx
-  vy' = Set.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Set.toList vx]) vy
+  vx' = Domain.filter (\x -> (x `mod` 2 == 0) `Domain.member` vy) vx
+  vy' = Domain.filter (\y -> or [(x `mod` 2 == 0) == y | x <- Domain.toList vx]) vy
 
 {-|
 Example of Container with multiple type variables
@@ -241,7 +241,7 @@ newtype CPairList x y t =
   CPairList { unPairList :: PairList (t x) (t y) }
   deriving (Show, Eq, Ord)
 
-instance (FDDomain x, FDDomain y) =>
+instance (FDValue x, FDValue y) =>
          ContainerMap (CPairList x y) where
   cmapA f (CPairList ps) =
     CPairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
@@ -270,3 +270,14 @@ testMT = do
                            , ([4..5], [True, False]) ]
   forM_ v $ uncurry mt
   labelC $ CPairList v
+
+{-|
+>>> take 1 $ runFD testLazy
+[[1,1,1]]
+-}
+testLazy :: FD s [[Int]]
+testLazy = do
+  x <- newL [1..100]
+  y <- newL [1..100]
+  z <- newL [1..100]
+  labelT [x, y, z]
