@@ -56,24 +56,23 @@ module Control.CPFD
        , alldiffmod
        ) where
 
-import           Control.Applicative         (Applicative, WrappedMonad (..),
-                                              (<$>), (<*>))
-import           Control.Monad               (forM, liftM, replicateM, unless,
-                                              when)
-import           Control.Monad.ST.Lazy       (ST, runST)
-import           Control.Monad.State         (StateT, evalStateT)
-import qualified Control.Monad.State         as State
-import           Control.Monad.Trans         (lift)
-import           Control.Monad.Writer        (WriterT, runWriterT)
-import qualified Control.Monad.Writer        as Writer
-import           Data.Foldable               (Foldable)
-import qualified Data.Foldable               as Foldable
-import           Data.Maybe                  (listToMaybe)
-import           Data.STRef.Lazy             (STRef)
-import qualified Data.STRef.Lazy             as STRef
-import           Data.Traversable            (Traversable)
-import qualified Data.Traversable            as Traversable
-import           Debug.Trace                 (traceM)
+import           Control.Applicative   (Applicative, WrappedMonad (..), (<$>),
+                                        (<*>))
+import           Control.Monad         (forM, liftM, replicateM, unless, when)
+import           Control.Monad.ST.Lazy (ST, runST)
+import           Control.Monad.State   (StateT, evalStateT)
+import qualified Control.Monad.State   as State
+import           Control.Monad.Trans   (lift)
+import           Control.Monad.Writer  (WriterT, runWriterT)
+import qualified Control.Monad.Writer  as Writer
+import           Data.Foldable         (Foldable)
+import qualified Data.Foldable         as Foldable
+import           Data.Maybe            (listToMaybe)
+import           Data.STRef.Lazy       (STRef)
+import qualified Data.STRef.Lazy       as STRef
+import           Data.Traversable      (Traversable)
+import qualified Data.Traversable      as Traversable
+import           Debug.Trace           (traceM)
 
 import           Control.CPFD.Domain         (Domain, FDValue)
 import qualified Control.CPFD.Domain         as Domain
@@ -522,7 +521,7 @@ type MultiPropRule v = [Domain v] -> [Domain v]
 
 type MultiConstraint s v = [Var s v] -> FD s ()
 
--- | Create multiple-arc constraint from propagator
+-- | Create hyper-arc constraint from propagator
 multiConstraint :: FDValue v =>
                    String -> MultiPropRule v -> MultiConstraint s v
 multiConstraint n c vs = adds n vs $ do
@@ -536,6 +535,16 @@ multiConstraint n c vs = adds n vs $ do
   when (any (\(d, d') -> Domain.size d < Domain.size d') $ zip ds ds') $
     error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
   (`mapM_` zip vs ds') $ uncurry set
+
+-- | General arc constraint
+cGeneralArc :: (FDValue a, FDValue b) =>
+               String -> (a -> b -> Bool) -> ArcConstraint s a b
+cGeneralArc n p = arcConstraint n (pGeneralArc p)
+
+pGeneralArc :: (FDValue a, FDValue b) => (a -> b -> Bool) -> ArcPropRule a b
+pGeneralArc p dx dy = (dx', dy') where
+  dx' = Domain.filter (\x -> any (x `p`) (Domain.toList dy)) dx
+  dy' = Domain.filter (\y -> any (`p` y) (Domain.toList dx)) dy
 
 -- Primitive constraints
 
