@@ -12,7 +12,7 @@ fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- Fuzzy Relation
 
-type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
+-- type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
 
 fuzzyIntEq :: MembershipGrade (Int, Int) DGrade
 fuzzyIntEq (x, y) = fromRational (toRational g) where

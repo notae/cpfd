@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
@@ -13,13 +14,15 @@ module Data.Fuzzy
        , FuzzySetUpdate (..)
        , DGrade
        , MapFuzzySet
+       , MFFuzzySet (..)
        ) where
 
-import           Control.Arrow (first)
-import qualified Data.List     as List
-import           Data.Map      (Map)
-import qualified Data.Map      as Map
-import           Data.Maybe    (fromMaybe)
+import           Control.Arrow       (first)
+import qualified Data.List           as List
+import           Data.Map            (Map)
+import qualified Data.Map            as Map
+import           Data.Maybe          (fromMaybe)
+import           Text.Show.Functions ()
 
 class Fuzzy a where
   infixr 3 ?&
@@ -42,7 +45,7 @@ class Fuzzy a => FuzzySet a where
   type Value a
   type Degree a
   mu :: a -> Value a -> Degree a
-  support :: Eq (Value a) => a -> [Value a]
+  support :: a -> [Value a]
 
 class FuzzySet s => FuzzySetFromList s where
   fromList :: [(Value s, Degree s)] -> s
@@ -82,7 +85,7 @@ instance Num DGrade where
 
 -- only for numeric literal
 instance Fractional DGrade where
-  fromRational x = DGrade (checkDGrade (fromRational x))
+  fromRational = DGrade . checkDGrade . fromRational
 
 instance Real DGrade where
   toRational  = toRational . unDGrade
@@ -123,25 +126,47 @@ newtype MapFuzzySet a d =
   MapFuzzySet (Map a d)
   deriving (Show, Read, Eq, Ord)
 
-instance (Ord a, Show a, Grade g) => Fuzzy (MapFuzzySet a g) where
+instance (Ord a, Grade g) => Fuzzy (MapFuzzySet a g) where
   x ?& y = z where
     zs = support x `List.intersect` support y
-    z = fromList (map (\e -> (e, (mu x e) ?& (mu y e))) zs)
+    z = fromList (map (\e -> (e, mu x e ?& mu y e)) zs)
   x ?| y = z where
     zs = support x `List.intersect` support y
-    z = fromList (map (\e -> (e, (mu x e) ?| (mu y e))) zs)
+    z = fromList (map (\e -> (e, mu x e ?| mu y e)) zs)
 
-instance (Ord a, Show a, Grade d) => FuzzySet (MapFuzzySet a d) where
+instance (Ord a, Grade d) => FuzzySet (MapFuzzySet a d) where
   type Value (MapFuzzySet a d) = a
   type Degree (MapFuzzySet a d) = d
   mu (MapFuzzySet m) x = fromMaybe minBound (Map.lookup x m)
   support (MapFuzzySet m) = Map.keys m
 
-instance (Ord a, Show a, Grade g) => FuzzySetFromList (MapFuzzySet a g) where
+instance (Ord a, Grade g) => FuzzySetFromList (MapFuzzySet a g) where
   fromList xs = MapFuzzySet (Map.fromList xs)
 
-instance (Ord a, Show a, Grade d) => FuzzySetUpdate (MapFuzzySet a d) where
+instance (Ord a, Grade d) => FuzzySetUpdate (MapFuzzySet a d) where
+  -- TBD: delete if grade == minBound
   update (MapFuzzySet m) x g = MapFuzzySet (Map.insert x g m)
+
+data MFFuzzySet a g =
+  MFFSet
+  { mf    :: MembershipGrade a g
+  , mfDom :: [a] }
+  deriving (Show)
+
+instance (Eq a, Grade g) => Fuzzy (MFFuzzySet a g) where
+  -- TBD: delete if grade == minBound
+  x ?& y = MFFSet { mf = mf x ?& mf y,
+                    mfDom = mfDom x `List.intersect` mfDom y }
+  x ?| y = MFFSet { mf = mf x ?| mf y,
+                    mfDom = mfDom x `List.intersect` mfDom y }
+  inv s = s { mf = inv (mf s) }
+
+instance (Eq a, Grade g) => FuzzySet (MFFuzzySet a g) where
+  type Value (MFFuzzySet a g) = a
+  type Degree (MFFuzzySet a g) = g
+  -- TBD: check whether in domain
+  mu = mf
+  support MFFSet{..} = filter (\e -> mf e > minBound ) mfDom
 
 -- support
 -- core
