@@ -7,6 +7,9 @@ import Data.Fuzzy
 fs1 :: MapFuzzySet Int DGrade
 fs1 = fromList [(0, 0.5), (1, 1), (2, 0.5)]
 
+fs2 :: MapFuzzySet Int DGrade
+fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
+
 -- Fuzzy Relation
 
 type FuzzyRelationGrade a b g = MembershipGrade (a, b) g

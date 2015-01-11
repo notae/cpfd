@@ -16,6 +16,7 @@ module Data.Fuzzy
        ) where
 
 import           Control.Arrow (first)
+import qualified Data.List     as List
 import           Data.Map      (Map)
 import qualified Data.Map      as Map
 import           Data.Maybe    (fromMaybe)
@@ -45,6 +46,8 @@ class Fuzzy a => FuzzySet a where
 
 class FuzzySet s => FuzzySetFromList s where
   fromList :: [(Value s, Degree s)] -> s
+  fromCoreList :: Grade (Degree s) => [Value s] -> s
+  fromCoreList xs = fromList (zip xs (repeat maxBound))
 
 class FuzzySet a => FuzzySetUpdate a where
   update :: a -> Value a -> Degree a -> a
@@ -113,15 +116,20 @@ instance Num NGrade where
 [0,1,2]
 >>> update fs1 2 0.6
 MapFuzzySet (fromList [(0,0.3),(1,1.0),(2,0.6)])
+>>> fromCoreList [0..2] :: MapFuzzySet Int DGrade
+MapFuzzySet (fromList [(0,1.0),(1,1.0),(2,1.0)])
 -}
 newtype MapFuzzySet a d =
   MapFuzzySet (Map a d)
   deriving (Show, Read, Eq, Ord)
 
-instance (Ord a, Show a, Grade d) => Fuzzy (MapFuzzySet a d) where
-  (MapFuzzySet x) ?& (MapFuzzySet y) = undefined
---     zs = support x `List.intersect` support y
-  (MapFuzzySet x) ?| (MapFuzzySet y) = undefined
+instance (Ord a, Show a, Grade g) => Fuzzy (MapFuzzySet a g) where
+  x ?& y = z where
+    zs = support x `List.intersect` support y
+    z = fromList (map (\e -> (e, (mu x e) ?& (mu y e))) zs)
+  x ?| y = z where
+    zs = support x `List.intersect` support y
+    z = fromList (map (\e -> (e, (mu x e) ?| (mu y e))) zs)
 
 instance (Ord a, Show a, Grade d) => FuzzySet (MapFuzzySet a d) where
   type Value (MapFuzzySet a d) = a
@@ -129,16 +137,11 @@ instance (Ord a, Show a, Grade d) => FuzzySet (MapFuzzySet a d) where
   mu (MapFuzzySet m) x = fromMaybe minBound (Map.lookup x m)
   support (MapFuzzySet m) = Map.keys m
 
-{-|
--}
 instance (Ord a, Show a, Grade g) => FuzzySetFromList (MapFuzzySet a g) where
   fromList xs = MapFuzzySet (Map.fromList xs)
 
 instance (Ord a, Show a, Grade d) => FuzzySetUpdate (MapFuzzySet a d) where
   update (MapFuzzySet m) x g = MapFuzzySet (Map.insert x g m)
-
--- fromCoreList :: (Ord a, Grade g) => [a] -> MapFuzzySet a g
--- fromCoreList xs = fromList (zip xs (repeat maxBound))
 
 -- support
 -- core
