@@ -1,15 +1,16 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeSynonymInstances       #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Data.Fuzzy
        (
-         Fuzzy, (?&), (?|), inv
+         Fuzzy (..)
        , Grade, MembershipGrade
-       , FuzzySet, mu, support
-       , FuzzySetFromList, fromList
-       , FuzzySetUpdate, update
+       , FuzzySet (..)
+       , FuzzySetFromList (..)
+       , FuzzySetUpdate (..)
        , DGrade
        , MapFuzzySet
        ) where
@@ -19,17 +20,22 @@ import           Data.Map      (Map)
 import qualified Data.Map      as Map
 import           Data.Maybe    (fromMaybe)
 
-class Eq a => Fuzzy a where
+class Fuzzy a where
   infixr 3 ?&
   (?&) :: a -> a -> a
   infixr 2 ?|
   (?|) :: a -> a -> a
   inv :: a -> a
 
--- semiring ?
+-- TBD: semiring ?
 class (Fuzzy a, Ord a, Enum a, Bounded a, Fractional a) => Grade a
 
 type MembershipGrade a g = a -> g
+
+instance Grade g => Fuzzy (MembershipGrade a g) where
+  x ?& y = \a -> x a ?& y a
+  x ?| y = \a -> x a ?| y a
+  inv x = \a -> inv (x a)
 
 class Fuzzy a => FuzzySet a where
   type Value a
