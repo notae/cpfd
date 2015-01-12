@@ -22,6 +22,8 @@ import qualified Data.List           as List
 import           Data.Map            (Map)
 import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
+import           Data.Set            (Set)
+import qualified Data.Set            as Set
 import           Text.Show.Functions ()
 
 class Fuzzy a where
@@ -41,19 +43,17 @@ instance Grade g => Fuzzy (MembershipGrade a g) where
   x ?| y = \a -> x a ?| y a
   inv x = \a -> inv (x a)
 
-class Fuzzy a => FuzzySet a where
-  type Value a
-  type Degree a
-  mu :: a -> Value a -> Degree a
-  support :: a -> [Value a]
+class FuzzySet s where
+  mu :: (Fuzzy (s a g), Ord a, Grade g) => s a g -> a -> g
+  support :: (Ord a, Grade g) => s a g -> [a]
 
 class FuzzySet s => FuzzySetFromList s where
-  fromList :: [(Value s, Degree s)] -> s
-  fromCoreList :: Grade (Degree s) => [Value s] -> s
+  fromList :: Ord a => [(a, g)] -> s a g
+  fromCoreList :: (Ord a, Grade g) => [a] -> s a g
   fromCoreList xs = fromList (zip xs (repeat maxBound))
 
-class FuzzySet a => FuzzySetUpdate a where
-  update :: a -> Value a -> Degree a -> a
+class FuzzySet s => FuzzySetUpdate s where
+  update :: (Ord a, Grade g) => s a g -> a -> g -> s a g
 
 newtype DGrade =
   DGrade { unDGrade :: Double }
@@ -134,39 +134,36 @@ instance (Ord a, Grade g) => Fuzzy (MapFuzzySet a g) where
     zs = support x `List.intersect` support y
     z = fromList (map (\e -> (e, mu x e ?| mu y e)) zs)
 
-instance (Ord a, Grade d) => FuzzySet (MapFuzzySet a d) where
-  type Value (MapFuzzySet a d) = a
-  type Degree (MapFuzzySet a d) = d
+instance FuzzySet MapFuzzySet where
   mu (MapFuzzySet m) x = fromMaybe minBound (Map.lookup x m)
   support (MapFuzzySet m) = Map.keys m
 
-instance (Ord a, Grade g) => FuzzySetFromList (MapFuzzySet a g) where
+instance FuzzySetFromList MapFuzzySet where
   fromList xs = MapFuzzySet (Map.fromList xs)
 
-instance (Ord a, Grade d) => FuzzySetUpdate (MapFuzzySet a d) where
-  -- TBD: delete if grade == minBound
-  update (MapFuzzySet m) x g = MapFuzzySet (Map.insert x g m)
+instance FuzzySetUpdate MapFuzzySet where
+  update (MapFuzzySet m) x g = MapFuzzySet $
+    if g == minBound
+    then Map.delete x m
+    else Map.insert x g m
 
+-- TBD: domain type for cartesian product D1 x D2 ...
 data MFFuzzySet a g =
   MFFSet
   { mf    :: MembershipGrade a g
-  , mfDom :: [a] }
+  , mfDom :: Set a }
   deriving (Show)
 
-instance (Eq a, Grade g) => Fuzzy (MFFuzzySet a g) where
-  -- TBD: delete if grade == minBound
+instance (Ord a, Grade g) => Fuzzy (MFFuzzySet a g) where
   x ?& y = MFFSet { mf = mf x ?& mf y,
-                    mfDom = mfDom x `List.intersect` mfDom y }
+                    mfDom = mfDom x `Set.intersection` mfDom y }
   x ?| y = MFFSet { mf = mf x ?| mf y,
-                    mfDom = mfDom x `List.intersect` mfDom y }
+                    mfDom = mfDom x `Set.intersection` mfDom y }
   inv s = s { mf = inv (mf s) }
 
-instance (Eq a, Grade g) => FuzzySet (MFFuzzySet a g) where
-  type Value (MFFuzzySet a g) = a
-  type Degree (MFFuzzySet a g) = g
-  -- TBD: check whether in domain
-  mu = mf
-  support MFFSet{..} = filter (\e -> mf e > minBound ) mfDom
+instance FuzzySet MFFuzzySet where
+  mu MFFSet{..} e = if e `Set.member` mfDom then mf e else minBound
+  support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)
 
 -- support
 -- core
