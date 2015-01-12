@@ -1,15 +1,15 @@
 -- Example of fuzzy CSP
 
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Control.CPFD.Example.Fuzzy where
 
-import           Control.Applicative ((<$>))
-import           Control.Applicative ((<*>))
+import           Control.Applicative ((<$>), (<*>))
 import           Data.Fuzzy
 import           Data.List           (foldl')
 import           Data.Set            (Set)
 import qualified Data.Set            as Set
+import           Debug.Trace         (traceShow)
 
 fs1 :: MapFuzzySet Int DGrade
 fs1 = fromList [(0, 0.5), (1, 1), (2, 0.5)]
@@ -50,20 +50,22 @@ dom2 = fromCoreList [0..10]
 
 revise :: (Fuzzy (r (a, b) g), FuzzySet r,
            Fuzzy (s a g), Fuzzy (s b g), FuzzySet s, FuzzySetUpdate s,
-           Ord a, Ord b, Grade g) =>
+           FValue a, FValue b, Grade g) =>
            r (a, b) g -> s a g -> s b g -> g -> (g, Bool, s a g)
 revise r x1 x2 sup = (sup', changed, x1') where
-  sup' = min sup height
+  sup' = sup ?& height
   (changed, height, x1') = foldArc (revise0 r x2) (False, minBound, x1) x1 x2
 
-revise0 :: (Fuzzy (r (a, b) t), FuzzySet r,
-            Fuzzy (s a t), Fuzzy (s b t), FuzzySet s, FuzzySetUpdate s,
-            Ord a, Ord b, Grade t) =>
-           r (a, b) t -> s b t -> (Bool, t, s a t) -> (a, b) ->
-           (Bool, t, s a t)
+revise0 :: (Fuzzy (r (a, b) g), FuzzySet r,
+            Fuzzy (s a g), Fuzzy (s b g), FuzzySet s, FuzzySetUpdate s,
+            FValue a, FValue b, Grade g) =>
+           r (a, b) g -> s b g -> (Bool, g, s a g) -> (a, b) ->
+           (Bool, g, s a g)
+-- revise0 r x2 (ch, h, x1) (d1, d2)
+--   | traceShow ("revise0", ((d1, d2), h)) False = undefined
 revise0 r x2 (ch, h, x1) (d1, d2) = (ch', h', x1') where
   nd = cons r x1 x2 d1 d2
-  h' = max nd h
+  h' = nd ?| h
   (ch', x1') =
     if nd /= mu x1 d1
     then (True, update x1 d1 nd)
@@ -78,8 +80,8 @@ foldArc f c x1 x2 = foldl' g c (support x1) where
 >>> cons fr dom1 dom2 2 5
 0.7
 -}
-cons :: (Fuzzy (s1 (a, b) g), FuzzySet s1,
-         Fuzzy (s2 a g), Fuzzy (s2 b g), FuzzySet s2,
+cons :: (Fuzzy (r (a, b) g), FuzzySet r,
+         Fuzzy (s a g), Fuzzy (s b g), FuzzySet s,
          Ord a, Ord b, Grade g) =>
-        s1 (a, b) g -> s2 a g -> s2 b g -> a -> b -> g
+        r (a, b) g -> s a g -> s b g -> a -> b -> g
 cons r x1 x2 d1 d2 = mu x1 d1 ?& mu r (d1, d2) ?& mu x2 d2

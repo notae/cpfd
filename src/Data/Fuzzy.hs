@@ -1,14 +1,14 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
-{-# LANGUAGE UndecidableInstances       #-}
 
 module Data.Fuzzy
        (
          Fuzzy (..)
-       , Grade, MembershipGrade
+       , FValue, Grade, MembershipGrade
        , FuzzySet (..)
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
@@ -33,15 +33,19 @@ class Fuzzy a where
   (?|) :: a -> a -> a
   inv :: a -> a
 
+-- class (Ord v, Show v) => FValue v
+type FValue v = (Ord v, Show v)
+
 -- TBD: semiring ?
-class (Fuzzy a, Ord a, Enum a, Bounded a, Fractional a) => Grade a
+class (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g) => Grade g
+-- type Grade g = (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g)
 
 type MembershipGrade a g = a -> g
 
 instance Grade g => Fuzzy (MembershipGrade a g) where
   x ?& y = \a -> x a ?& y a
   x ?| y = \a -> x a ?| y a
-  inv x = \a -> inv (x a)
+  inv x = inv . x
 
 class FuzzySet s where
   mu :: (Fuzzy (s a g), Ord a, Grade g) => s a g -> a -> g
