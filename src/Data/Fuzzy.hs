@@ -12,7 +12,7 @@ module Data.Fuzzy
        , FuzzySet (..)
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
-       , DGrade, RGrade
+       , DGrade, RGrade, (%)
        , MapFuzzySet
        , MFFuzzySet (..)
        ) where
@@ -22,21 +22,26 @@ import qualified Data.List           as List
 import           Data.Map            (Map)
 import qualified Data.Map            as Map
 import           Data.Maybe          (fromMaybe)
+import           Data.Ratio          ((%))
 import           Data.Set            (Set)
 import qualified Data.Set            as Set
 import           Text.Show.Functions ()
 
 class Fuzzy a where
+  -- | Intersection
   infixr 3 ?&
   (?&) :: a -> a -> a
+  -- | Union
   infixr 2 ?|
   (?|) :: a -> a -> a
+  -- | Inversion
   inv :: a -> a
 
 -- class (Ord v, Show v) => FValue v
 type FValue v = (Ord v, Show v)
 
--- TBD: semiring ?
+-- | Fuzzy grade
+-- (TBD: semiring ?)
 class (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g) => Grade g
 -- type Grade g = (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g)
 
@@ -59,9 +64,11 @@ class FuzzySet s => FuzzySetFromList s where
 class FuzzySet s => FuzzySetUpdate s where
   update :: (Ord a, Grade g) => s a g -> a -> g -> s a g
 
+-- | Fuzzy grade based on Double
 newtype DGrade =
   DGrade { unDGrade :: Double }
   deriving (Eq, Ord, Enum)
+{-# DEPRECATED DGrade "Use 'Data.Fuzzy.RGrade'" #-}
 
 instance Bounded DGrade where
   minBound = DGrade 0
@@ -76,13 +83,13 @@ instance Fuzzy DGrade where
   (DGrade x) ?| (DGrade y) = DGrade (x `max` y)
   inv (DGrade x) = DGrade (unDGrade maxBound - x)
 
--- only for numeric literal
+-- | Only for numeric literals
 instance Num DGrade where
   fromInteger = fromRational . fromInteger
 --   (DGrade x) + (DGrade y) = DGrade (checkDGrade (x + y))
 --   (DGrade x) - (DGrade y) = DGrade (checkDGrade (x - y))
 
--- only for numeric literal
+-- | Only for numeric literals
 instance Fractional DGrade where
   fromRational = DGrade . checkDGrade . fromRational
 
@@ -97,6 +104,7 @@ instance Read DGrade where
 
 instance Grade DGrade
 
+-- | Fuzzy grade based on Rational
 newtype RGrade =
   RGrade { unRGrade :: Rational }
   deriving (Eq, Ord, Enum)
@@ -114,13 +122,13 @@ instance Fuzzy RGrade where
   (RGrade x) ?| (RGrade y) = RGrade (x `max` y)
   inv (RGrade x) = RGrade (unRGrade maxBound - x)
 
--- only for numeric literal
+-- | Only for numeric literals
 instance Num RGrade where
   fromInteger = fromRational . fromInteger
 --   (RGrade x) + (RGrade y) = RGrade (checkRGrade (x + y))
 --   (RGrade x) - (RGrade y) = RGrade (checkRGrade (x - y))
 
--- only for numeric literal
+-- | Only for numeric literals
 instance Fractional RGrade where
   fromRational = RGrade . checkRGrade . fromRational
 
@@ -149,15 +157,15 @@ instance Num NGrade where
 -}
 
 {-|
->>> let fs1 = fromList [(0, 0.3), (1, 1), (2, 0.7)] :: MapFuzzySet Int DGrade
+>>> let fs1 = fromList [(0, 0.3), (1, 1), (2, 0.7)] :: MapFuzzySet Int RGrade
 >>> mu fs1 2
-0.7
+7 % 10
 >>> support fs1
 [0,1,2]
 >>> update fs1 2 0.6
-MapFuzzySet (fromList [(0,0.3),(1,1.0),(2,0.6)])
->>> fromCoreList [0..2] :: MapFuzzySet Int DGrade
-MapFuzzySet (fromList [(0,1.0),(1,1.0),(2,1.0)])
+MapFuzzySet (fromList [(0,3 % 10),(1,1 % 1),(2,3 % 5)])
+>>> fromCoreList [0..2] :: MapFuzzySet Int RGrade
+MapFuzzySet (fromList [(0,1 % 1),(1,1 % 1),(2,1 % 1)])
 -}
 newtype MapFuzzySet a d =
   MapFuzzySet (Map a d)
@@ -202,6 +210,6 @@ instance FuzzySet MFFuzzySet where
   mu MFFSet{..} e = if e `Set.member` mfDom then mf e else minBound
   support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)
 
--- support
--- core
--- threshold
+-- TBD: support
+-- TBD: core
+-- TBD: threshold

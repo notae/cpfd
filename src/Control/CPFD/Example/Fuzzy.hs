@@ -11,10 +11,10 @@ import           Data.Set            (Set)
 import qualified Data.Set            as Set
 import           Debug.Trace         (traceShow)
 
-fs1 :: MapFuzzySet Int DGrade
+fs1 :: Grade g => MapFuzzySet Int g
 fs1 = fromList [(0, 0.5), (1, 1), (2, 0.5)]
 
-fs2 :: MapFuzzySet Int DGrade
+fs2 :: Grade g => MapFuzzySet Int g
 fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- Fuzzy Relation
