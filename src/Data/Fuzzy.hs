@@ -68,18 +68,13 @@ instance Bounded DGrade where
   maxBound = DGrade 1
 
 checkDGrade :: Double -> Double
-checkDGrade x | 0 <= x && x <= 1 = x
+checkDGrade x | (unDGrade minBound) <= x && x <= (unDGrade maxBound) = x
               | otherwise        = error "Data.Fuzzy.DGrade: bad argument"
-
--- normalizeDGrade :: Double -> Double
--- normalizeDGrade x | 0 <= x && x <= 1 = x
---                   | x < 0 = 0
---                   | 1 < x = 1
 
 instance Fuzzy DGrade where
   (DGrade x) ?& (DGrade y) = DGrade (x `min` y)
   (DGrade x) ?| (DGrade y) = DGrade (x `max` y)
-  inv (DGrade x) = DGrade (1 - x)
+  inv (DGrade x) = DGrade (unDGrade maxBound - x)
 
 -- only for numeric literal
 instance Num DGrade where
