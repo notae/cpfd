@@ -12,7 +12,7 @@ module Data.Fuzzy
        , FuzzySet (..)
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
-       , DGrade
+       , DGrade, RGrade
        , MapFuzzySet
        , MFFuzzySet (..)
        ) where
@@ -96,6 +96,44 @@ instance Read DGrade where
   readsPrec prec = map (first DGrade) . readsPrec prec
 
 instance Grade DGrade
+
+newtype RGrade =
+  RGrade { unRGrade :: Rational }
+  deriving (Eq, Ord, Enum)
+
+instance Bounded RGrade where
+  minBound = RGrade 0
+  maxBound = RGrade 1
+
+checkRGrade :: Rational -> Rational
+checkRGrade x | (unRGrade minBound) <= x && x <= (unRGrade maxBound) = x
+              | otherwise        = error "Data.Fuzzy.RGrade: bad argument"
+
+instance Fuzzy RGrade where
+  (RGrade x) ?& (RGrade y) = RGrade (x `min` y)
+  (RGrade x) ?| (RGrade y) = RGrade (x `max` y)
+  inv (RGrade x) = RGrade (unRGrade maxBound - x)
+
+-- only for numeric literal
+instance Num RGrade where
+  fromInteger = fromRational . fromInteger
+--   (RGrade x) + (RGrade y) = RGrade (checkRGrade (x + y))
+--   (RGrade x) - (RGrade y) = RGrade (checkRGrade (x - y))
+
+-- only for numeric literal
+instance Fractional RGrade where
+  fromRational = RGrade . checkRGrade . fromRational
+
+instance Real RGrade where
+  toRational  = toRational . unRGrade
+
+instance Show RGrade where
+  show = show . unRGrade
+
+instance Read RGrade where
+  readsPrec prec = map (first RGrade) . readsPrec prec
+
+instance Grade RGrade
 
 {-
 newtype NGrade =

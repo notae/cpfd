@@ -21,8 +21,8 @@ fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
 
-fuzzyIntEq :: MembershipGrade (Int, Int) DGrade
-fuzzyIntEq (x, y) = fromRational (toRational g) where
+fuzzyIntEq' :: MembershipGrade (Int, Int) DGrade
+fuzzyIntEq' (x, y) = fromRational (toRational g) where
   iToD = fromInteger . toInteger
   gToD = fromRational . toRational
   d = abs (x - y)
@@ -33,6 +33,16 @@ fuzzyIntEq (x, y) = fromRational (toRational g) where
   maxB = gToD (maxBound :: DGrade)
   g = if d < c then maxB - r else minB
 
+fuzzyIntEq :: MembershipGrade (Int, Int) RGrade
+fuzzyIntEq (x, y) = fromRational g where
+  d = abs (x - y)
+  c = 10
+  r = toRational d / toRational c
+  g, minB, maxB :: Rational
+  minB = toRational (minBound :: RGrade)
+  maxB = toRational (maxBound :: RGrade)
+  g = if d < c then maxB - r else minB
+
 -- Fuzzy Constraint
 
 -- type FuzzyArcProp a b =
@@ -41,10 +51,10 @@ fuzzyIntEq (x, y) = fromRational (toRational g) where
 frdom :: Set (Int, Int)
 frdom = Set.fromList ((,) <$> [0..10] <*> [0..10])
 
-fr :: MFFuzzySet (Int, Int) DGrade
+fr :: MFFuzzySet (Int, Int) RGrade
 fr = MFFSet fuzzyIntEq frdom
 
-dom1, dom2 :: MapFuzzySet Int DGrade
+dom1, dom2 :: Grade g => MapFuzzySet Int g
 dom1 = fromCoreList [0..10]
 dom2 = fromCoreList [0..10]
 
@@ -78,7 +88,7 @@ foldArc f c x1 x2 = foldl' g c (support x1) where
 
 {-|
 >>> cons fr dom1 dom2 2 5
-0.7
+7 % 10
 -}
 cons :: (Fuzzy (r (a, b) g), FuzzySet r,
          Fuzzy (s a g), Fuzzy (s b g), FuzzySet s,
