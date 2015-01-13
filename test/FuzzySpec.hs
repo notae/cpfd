@@ -30,16 +30,16 @@ gradeSpec = do
     prop "or-assoc"
       (fuzzyOrAssocProp :: DGrade -> DGrade -> DGrade -> Bool)
     -- TBD: not hold as DGrade is based on inexact Double
-    -- prop "inv"
-    --   (fuzzyInvProp :: DGrade -> Bool)
+    -- prop "not-not"
+    --   (fuzzyNotProp :: DGrade -> Bool)
 
   describe "RGrade" $ do
     prop "and-assoc"
       (fuzzyAndAssocProp :: RGrade -> RGrade -> RGrade -> Bool)
     prop "or-assoc"
       (fuzzyOrAssocProp :: RGrade -> RGrade -> RGrade -> Bool)
-    prop "inv"
-      (fuzzyInvProp :: RGrade -> Bool)
+    prop "not-not"
+      (fuzzyNotProp :: RGrade -> Bool)
 --     prop "and-left-id"
 --       (gradeAndLeftIdProp :: RGrade -> Bool)
 --     prop "and-right-id"
@@ -58,8 +58,8 @@ fsetSpec = do
     prop "or-assoc"
       (fuzzyOrAssocProp :: MFS -> MFS -> MFS -> Bool)
     -- TBD: not implemented
-    -- prop "inv"
-    --   (fuzzyInvProp :: MFS -> Bool)
+    -- prop "not-not"
+    --   (fuzzyNotProp :: MFS -> Bool)
 
 -- Laws
 
@@ -69,8 +69,8 @@ fuzzyAndAssocProp x y z = ((x ?& y) ?& z) == (x ?& (y ?& z))
 fuzzyOrAssocProp :: (Fuzzy a, Eq a) => a -> a -> a -> Bool
 fuzzyOrAssocProp x y z = ((x ?| y) ?| z) == (x ?| (y ?| z))
 
-fuzzyInvProp :: (Fuzzy a, Eq a) => a -> Bool
-fuzzyInvProp x = x == inv (inv x)
+fuzzyNotProp :: (Fuzzy a, Eq a) => a -> Bool
+fuzzyNotProp x = x == fnot (fnot x)
 
 gradeAndLeftIdProp :: Grade g => g -> Bool
 gradeAndLeftIdProp x = x == (maxBound ?& x)

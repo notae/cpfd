@@ -58,6 +58,38 @@ dom1, dom2 :: Grade g => MapFuzzySet Int g
 dom1 = fromCoreList [0..10]
 dom2 = fromCoreList [0..10]
 
+-- FCSP Example
+
+type FuzzyRelation3 a b c g = MFFuzzySet (a, b, c) g
+type FuzzyRelationGrade3 a b c g = MembershipGrade (a, b, c) g
+
+{-|
+Example from:
+
+> @ARTICLE{Dubois96possibilitytheory,
+>     author = {Didier Dubois and Hélène Fargier and Henri Prade},
+>     title = {Possibility theory in constraint satisfaction problems: Handling priority, preference and uncertainty},
+>     journal = {Applied Intelligence},
+>     year = {1996},
+>     volume = {6},
+>     pages = {287--309}
+> }
+
+-}
+exFCSP :: [FuzzyRelation3 Int Int Int RGrade]
+exFCSP = [c1]
+
+cd :: Set (Int, Int, Int)
+cd = Set.fromList ((,,) <$> [0..7] <*> [0..7] <*> [0..7])
+
+-- TBD: domain
+c1 :: FuzzyRelation3 Int Int Int RGrade
+c1 = MFFSet f cd where
+  f :: FuzzyRelationGrade3 Int Int Int RGrade
+  f (x, y, z) = if x + y + z == 7 then maxBound else minBound
+
+-- FCSP Solver
+
 revise :: (Fuzzy (r (a, b) g), FuzzySet r,
            Fuzzy (s a g), Fuzzy (s b g), FuzzySet s, FuzzySetUpdate s,
            FValue a, FValue b, Grade g) =>

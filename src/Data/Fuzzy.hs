@@ -28,14 +28,14 @@ import qualified Data.Set            as Set
 import           Text.Show.Functions ()
 
 class Fuzzy a where
-  -- | Intersection
+  -- | And (Intersection)
   infixr 3 ?&
   (?&) :: a -> a -> a
-  -- | Union
+  -- | Or (Union)
   infixr 2 ?|
   (?|) :: a -> a -> a
-  -- | Inversion
-  inv :: a -> a
+  -- | Not (Complement)
+  fnot :: a -> a
 
 -- class (Ord v, Show v) => FValue v
 type FValue v = (Ord v, Show v)
@@ -50,10 +50,12 @@ type MembershipGrade a g = a -> g
 instance Grade g => Fuzzy (MembershipGrade a g) where
   x ?& y = \a -> x a ?& y a
   x ?| y = \a -> x a ?| y a
-  inv x = inv . x
+  fnot x = fnot . x
 
 class FuzzySet s where
+  -- | A membership function.
   mu :: (Fuzzy (s a g), Ord a, Grade g) => s a g -> a -> g
+  -- | A list of values from the domain for which membership is non-zero.
   support :: (Ord a, Grade g) => s a g -> [a]
 
 class FuzzySet s => FuzzySetFromList s where
@@ -64,7 +66,7 @@ class FuzzySet s => FuzzySetFromList s where
 class FuzzySet s => FuzzySetUpdate s where
   update :: (Ord a, Grade g) => s a g -> a -> g -> s a g
 
--- | Fuzzy grade based on Double
+-- | Fuzzy grade based on Double.
 newtype DGrade =
   DGrade { unDGrade :: Double }
   deriving (Eq, Ord, Enum)
@@ -81,15 +83,15 @@ checkDGrade x | (unDGrade minBound) <= x && x <= (unDGrade maxBound) = x
 instance Fuzzy DGrade where
   (DGrade x) ?& (DGrade y) = DGrade (x `min` y)
   (DGrade x) ?| (DGrade y) = DGrade (x `max` y)
-  inv (DGrade x) = DGrade (unDGrade maxBound - x)
+  fnot (DGrade x) = DGrade (unDGrade maxBound - x)
 
--- | Only for numeric literals
+-- | Only for numeric literals.
 instance Num DGrade where
   fromInteger = fromRational . fromInteger
 --   (DGrade x) + (DGrade y) = DGrade (checkDGrade (x + y))
 --   (DGrade x) - (DGrade y) = DGrade (checkDGrade (x - y))
 
--- | Only for numeric literals
+-- | Only for numeric literals.
 instance Fractional DGrade where
   fromRational = DGrade . checkDGrade . fromRational
 
@@ -100,11 +102,11 @@ instance Show DGrade where
   show = show . unDGrade
 
 instance Read DGrade where
-  readsPrec prec = map (first DGrade) . readsPrec prec
+  readsPrec prec = map (first (DGrade . checkDGrade)) . readsPrec prec
 
 instance Grade DGrade
 
--- | Fuzzy grade based on Rational
+-- | Fuzzy grade based on Rational.
 newtype RGrade =
   RGrade { unRGrade :: Rational }
   deriving (Eq, Ord, Enum)
@@ -120,15 +122,15 @@ checkRGrade x | (unRGrade minBound) <= x && x <= (unRGrade maxBound) = x
 instance Fuzzy RGrade where
   (RGrade x) ?& (RGrade y) = RGrade (x `min` y)
   (RGrade x) ?| (RGrade y) = RGrade (x `max` y)
-  inv (RGrade x) = RGrade (unRGrade maxBound - x)
+  fnot (RGrade x) = RGrade (unRGrade maxBound - x)
 
--- | Only for numeric literals
+-- | Only for numeric literals.
 instance Num RGrade where
   fromInteger = fromRational . fromInteger
 --   (RGrade x) + (RGrade y) = RGrade (checkRGrade (x + y))
 --   (RGrade x) - (RGrade y) = RGrade (checkRGrade (x - y))
 
--- | Only for numeric literals
+-- | Only for numeric literals.
 instance Fractional RGrade where
   fromRational = RGrade . checkRGrade . fromRational
 
@@ -139,7 +141,7 @@ instance Show RGrade where
   show = show . unRGrade
 
 instance Read RGrade where
-  readsPrec prec = map (first RGrade) . readsPrec prec
+  readsPrec prec = map (first (RGrade . checkRGrade)) . readsPrec prec
 
 instance Grade RGrade
 
@@ -192,6 +194,8 @@ instance FuzzySetUpdate MapFuzzySet where
     then Map.delete x m
     else Map.insert x g m
 
+-- | Fuzzy set based on menbership function and its domain.
+--
 -- TBD: domain type for cartesian product D1 x D2 ...
 data MFFuzzySet a g =
   MFFSet
@@ -204,12 +208,8 @@ instance (Ord a, Grade g) => Fuzzy (MFFuzzySet a g) where
                     mfDom = mfDom x `Set.intersection` mfDom y }
   x ?| y = MFFSet { mf = mf x ?| mf y,
                     mfDom = mfDom x `Set.intersection` mfDom y }
-  inv s = s { mf = inv (mf s) }
+  fnot s = s { mf = fnot (mf s) }
 
 instance FuzzySet MFFuzzySet where
   mu MFFSet{..} e = if e `Set.member` mfDom then mf e else minBound
   support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)
-
--- TBD: support
--- TBD: core
--- TBD: threshold
