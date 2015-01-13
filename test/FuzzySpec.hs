@@ -60,8 +60,18 @@ fsetSpec = do
     -- TBD: not implemented
     -- prop "not-not"
     --   (fuzzyNotProp :: MFS -> Bool)
+    prop "$? id"
+      (fsetIdProp :: MFS -> Bool)
+    prop "$? comp"
+      (fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Bool)
 
--- Laws
+fsetIdProp :: MFS -> Bool
+fsetIdProp s = (id ?$ s) == s
+
+fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Bool
+fsetCompProp s f g = ((g . f) ?$ s) == (g ?$ f ?$ s)
+
+-- Typeclass Laws
 
 fuzzyAndAssocProp :: (Fuzzy a, Eq a) => a -> a -> a -> Bool
 fuzzyAndAssocProp x y z = ((x ?& y) ?& z) == (x ?& (y ?& z))

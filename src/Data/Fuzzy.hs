@@ -13,7 +13,7 @@ module Data.Fuzzy
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
        , DGrade, RGrade, (%)
-       , MapFuzzySet
+       , MapFuzzySet, (?$)
        , MFFuzzySet, mfFuzzySet
        ) where
 
@@ -29,10 +29,10 @@ import           Text.Show.Functions ()
 
 class Fuzzy a where
   -- | And (Intersection)
-  infixr 3 ?&
+  infixr 7 ?&
   (?&) :: a -> a -> a
   -- | Or (Union)
-  infixr 2 ?|
+  infixr 6 ?|
   (?|) :: a -> a -> a
   -- | Not (Complement)
   fnot :: a -> a
@@ -169,8 +169,8 @@ MapFuzzySet (fromList [(0,3 % 10),(1,1 % 1),(2,3 % 5)])
 >>> fromCoreList [0..2] :: MapFuzzySet Int RGrade
 MapFuzzySet (fromList [(0,1 % 1),(1,1 % 1),(2,1 % 1)])
 -}
-newtype MapFuzzySet a d =
-  MapFuzzySet (Map a d)
+newtype MapFuzzySet a g =
+  MapFuzzySet (Map a g)
   deriving (Show, Read, Eq, Ord)
 
 instance (Ord a, Grade g) => Fuzzy (MapFuzzySet a g) where
@@ -193,6 +193,10 @@ instance FuzzySetUpdate MapFuzzySet where
     if g == minBound
     then Map.delete x m
     else Map.insert x g m
+
+infixr 4 ?$
+(?$) :: (Ord b, Grade g) => (a -> b) -> MapFuzzySet a g -> MapFuzzySet b g
+(?$) f (MapFuzzySet s) = MapFuzzySet (Map.mapKeysWith (?|) f s)
 
 -- | Fuzzy set based on menbership function and its domain.
 --

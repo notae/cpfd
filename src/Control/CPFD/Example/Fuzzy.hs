@@ -11,10 +11,12 @@ import           Data.Set            (Set)
 import qualified Data.Set            as Set
 import           Debug.Trace         (traceShow)
 
-fs1 :: Grade g => MapFuzzySet Int g
+-- Fuzzy Set
+
+fs1 :: (FValue a, Num a, Grade g) => MapFuzzySet a g
 fs1 = fromList [(0, 0.5), (1, 1), (2, 0.5)]
 
-fs2 :: Grade g => MapFuzzySet Int g
+fs2 :: (FValue a, Num a, Grade g) => MapFuzzySet a g
 fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- Fuzzy Relation
@@ -84,7 +86,7 @@ d2 = (,,) <$> d <*> d
 d3 = (,,) <$> dx <*> dy <*> dz
 [d, dx, dy, dz] = [[0..7], d, d, d]
 
-[a0, a1, a2, a3, a4] = [0, 0.3, 0.5, 1-a1, 1]
+[a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]
 
 -- TBD: domain
 c1 :: FuzzyRelation3 Int Int Int RGrade
