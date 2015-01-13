@@ -19,7 +19,11 @@ fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- Fuzzy Relation
 
--- type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
+type FuzzyRelation a b g = MFFuzzySet (a, b) g
+type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
+
+type FuzzyRelation3 a b c g = MFFuzzySet (a, b, c) g
+type FuzzyRelationGrade3 a b c g = MembershipGrade (a, b, c) g
 
 fuzzyIntEq' :: MembershipGrade (Int, Int) DGrade
 fuzzyIntEq' (x, y) = fromRational (toRational g) where
@@ -48,20 +52,17 @@ fuzzyIntEq (x, y) = fromRational g where
 -- type FuzzyArcProp a b =
 --   FuzzyRelation a b -> FuzzySet a -> FuzzySet b -> (FuzzySet a, FuzzySet b)
 
-frdom :: Set (Int, Int)
-frdom = Set.fromList ((,) <$> [0..10] <*> [0..10])
+frdom :: [(Int, Int)]
+frdom = (,) <$> [0..10] <*> [0..10]
 
 fr :: MFFuzzySet (Int, Int) RGrade
-fr = MFFSet fuzzyIntEq frdom
+fr = mfFuzzySet fuzzyIntEq frdom
 
 dom1, dom2 :: Grade g => MapFuzzySet Int g
 dom1 = fromCoreList [0..10]
 dom2 = fromCoreList [0..10]
 
 -- FCSP Example
-
-type FuzzyRelation3 a b c g = MFFuzzySet (a, b, c) g
-type FuzzyRelationGrade3 a b c g = MembershipGrade (a, b, c) g
 
 {-|
 Example from:
@@ -79,14 +80,32 @@ Example from:
 exFCSP :: [FuzzyRelation3 Int Int Int RGrade]
 exFCSP = [c1]
 
-cd :: Set (Int, Int, Int)
-cd = Set.fromList ((,,) <$> [0..7] <*> [0..7] <*> [0..7])
+d2 = (,,) <$> d <*> d
+d3 = (,,) <$> dx <*> dy <*> dz
+[d, dx, dy, dz] = [[0..7], d, d, d]
+
+[a0, a1, a2, a3, a4] = [0, 0.3, 0.5, 1-a1, 1]
 
 -- TBD: domain
 c1 :: FuzzyRelation3 Int Int Int RGrade
-c1 = MFFSet f cd where
+c1 = mfFuzzySet f d3 where
   f :: FuzzyRelationGrade3 Int Int Int RGrade
   f (x, y, z) = if x + y + z == 7 then maxBound else minBound
+
+c2 :: MapFuzzySet Int RGrade
+c2 = fromList [(1, a3), (2, 1), (3, a3)]
+
+c3 :: MFFuzzySet Int RGrade
+c3 = mfFuzzySet f dy where
+  f :: MembershipGrade Int RGrade
+  f y | y == 3 || y == 4 = 1
+      | otherwise        = a2
+
+c4 :: MFFuzzySet Int RGrade
+c4 = mfFuzzySet f dx where
+  f x | x == 4           = 1
+      | x == 3 || x == 5 = a3
+      | otherwise        = a1
 
 -- FCSP Solver
 

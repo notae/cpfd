@@ -14,7 +14,7 @@ module Data.Fuzzy
        , FuzzySetUpdate (..)
        , DGrade, RGrade, (%)
        , MapFuzzySet
-       , MFFuzzySet (..)
+       , MFFuzzySet, mfFuzzySet
        ) where
 
 import           Control.Arrow       (first)
@@ -202,6 +202,9 @@ data MFFuzzySet a g =
   { mf    :: MembershipGrade a g
   , mfDom :: Set a }
   deriving (Show)
+
+mfFuzzySet :: Ord a => MembershipGrade a g -> [a] -> MFFuzzySet a g
+mfFuzzySet f xs = MFFSet f (Set.fromList xs)
 
 instance (Ord a, Grade g) => Fuzzy (MFFuzzySet a g) where
   x ?& y = MFFSet { mf = mf x ?& mf y,
