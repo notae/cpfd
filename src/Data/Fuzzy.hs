@@ -59,7 +59,7 @@ class FuzzySet s where
   support :: (Ord a, Grade g) => s a g -> [a]
 
 class FuzzySet s => FuzzySetFromList s where
-  fromList :: Ord a => [(a, g)] -> s a g
+  fromList :: (Ord a, Grade g) => [(a, g)] -> s a g
   fromCoreList :: (Ord a, Grade g) => [a] -> s a g
   fromCoreList xs = fromList (zip xs (repeat maxBound))
 
