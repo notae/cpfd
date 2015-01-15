@@ -8,13 +8,14 @@
 module Data.Fuzzy
        (
          Fuzzy (..)
-       , FValue, Grade, MembershipGrade
+       , FValue, Grade, Membership
        , FuzzySet (..)
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
        , DGrade, RGrade, (%)
        , MapFuzzySet, (?$)
        , MFFuzzySet, mfFuzzySet
+       , MFFuzzySet', mfFuzzySet'
        ) where
 
 import           Control.Arrow       (first)
@@ -44,13 +45,6 @@ type FValue v = (Ord v, Show v)
 -- (TBD: semiring ?)
 class (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g) => Grade g
 -- type Grade g = (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g)
-
-type MembershipGrade a g = a -> g
-
-instance Grade g => Fuzzy (MembershipGrade a g) where
-  x ?& y = \a -> x a ?& y a
-  x ?| y = \a -> x a ?| y a
-  fnot x = fnot . x
 
 class FuzzySet s where
   -- | A membership function.
@@ -158,6 +152,7 @@ instance Num NGrade where
   fromInteger = NGrade . fromInteger
 -}
 
+-- | Fuzzy set based on tuples of value and its membership grade.
 {-|
 >>> let fs1 = fromList [(0, 0.3), (1, 1), (2, 0.7)] :: MapFuzzySet Int RGrade
 >>> mu fs1 2
@@ -198,16 +193,37 @@ infixr 4 ?$
 (?$) :: (Ord b, Grade g) => (a -> b) -> MapFuzzySet a g -> MapFuzzySet b g
 (?$) f (MapFuzzySet s) = MapFuzzySet (Map.mapKeysWith (?|) f s)
 
--- | Fuzzy set based on menbership function and its domain.
+-- | Membership function.
+--   This can be regarded as fuzzy set based on membership function.
+type Membership a g = a -> g
+
+instance Grade g => Fuzzy (Membership a g) where
+  x ?& y = \a -> x a ?& y a
+  x ?| y = \a -> x a ?| y a
+  fnot x = fnot . x
+
+instance FuzzySet (->) where
+  mu f = f
+--   support = error "not support"
+
+-- | Wrapped membership function.
+newtype MF a g = MF { unMF :: Membership a g } deriving (Show, Fuzzy)
+{-# DEPRECATED MF "Use 'Data.Fuzzy.Membership'" #-}
+
+instance FuzzySet MF where
+  mu (MF m) = m
+
+-- | Fuzzy set based on membership function and its domain.
 --
 -- TBD: domain type for cartesian product D1 x D2 ...
 data MFFuzzySet a g =
   MFFSet
-  { mf    :: MembershipGrade a g
+  { mf    :: Membership a g
   , mfDom :: Set a }
   deriving (Show)
+{-# DEPRECATED MFFuzzySet "Use 'Data.Fuzzy.Membership'" #-}
 
-mfFuzzySet :: Ord a => MembershipGrade a g -> [a] -> MFFuzzySet a g
+mfFuzzySet :: (Ord a, Grade g) => Membership a g -> [a] -> MFFuzzySet a g
 mfFuzzySet f xs = MFFSet f (Set.fromList xs)
 
 instance (Ord a, Grade g) => Fuzzy (MFFuzzySet a g) where
@@ -220,3 +236,21 @@ instance (Ord a, Grade g) => Fuzzy (MFFuzzySet a g) where
 instance FuzzySet MFFuzzySet where
   mu MFFSet{..} e = if e `Set.member` mfDom then mf e else minBound
   support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)
+
+newtype MFFuzzySet' a g =
+  MFFSet'
+  { mf' :: Membership a g }
+  deriving (Show)
+{-# DEPRECATED MFFuzzySet' "Use 'Data.Fuzzy.Membership'" #-}
+
+mfFuzzySet' :: (Ord a, Grade g) => Membership a g -> MFFuzzySet' a g
+mfFuzzySet' f = MFFSet' f
+
+instance (Ord a, Grade g) => Fuzzy (MFFuzzySet' a g) where
+  x ?& y = MFFSet' { mf' = mf' x ?& mf' y }
+  x ?| y = MFFSet' { mf' = mf' x ?| mf' y }
+  fnot s = s { mf' = fnot (mf' s) }
+
+instance FuzzySet MFFuzzySet' where
+  mu MFFSet'{..} e = mf' e
+--   support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)

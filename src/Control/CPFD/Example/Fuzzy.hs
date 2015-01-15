@@ -21,13 +21,11 @@ fs2 = fromList [(1, 0.5), (2, 0.8), (3, 0.2)]
 
 -- Fuzzy Relation
 
-type FuzzyRelation a b g = MFFuzzySet (a, b) g
-type FuzzyRelationGrade a b g = MembershipGrade (a, b) g
+type FuzzyRelation a b g = Membership (a, b) g
 
-type FuzzyRelation3 a b c g = MFFuzzySet (a, b, c) g
-type FuzzyRelationGrade3 a b c g = MembershipGrade (a, b, c) g
+type FuzzyRelation3 a b c g = Membership (a, b, c) g
 
-fuzzyIntEq' :: MembershipGrade (Int, Int) DGrade
+fuzzyIntEq' :: Membership (Int, Int) DGrade
 fuzzyIntEq' (x, y) = fromRational (toRational g) where
   iToD = fromInteger . toInteger
   gToD = fromRational . toRational
@@ -39,7 +37,7 @@ fuzzyIntEq' (x, y) = fromRational (toRational g) where
   maxB = gToD (maxBound :: DGrade)
   g = if d < c then maxB - r else minB
 
-fuzzyIntEq :: MembershipGrade (Int, Int) RGrade
+fuzzyIntEq :: Membership (Int, Int) RGrade
 fuzzyIntEq (x, y) = fromRational g where
   d = abs (x - y)
   c = 10
@@ -57,9 +55,6 @@ fuzzyIntEq (x, y) = fromRational g where
 frdom :: [(Int, Int)]
 frdom = (,) <$> [0..10] <*> [0..10]
 
-fr :: MFFuzzySet (Int, Int) RGrade
-fr = mfFuzzySet fuzzyIntEq frdom
-
 dom1, dom2 :: Grade g => MapFuzzySet Int g
 dom1 = fromCoreList [0..10]
 dom2 = fromCoreList [0..10]
@@ -69,7 +64,7 @@ dom2 = fromCoreList [0..10]
 7 % 10
 -}
 testCons :: RGrade
-testCons = cons fr dom1 dom2 2 5
+testCons = cons fuzzyIntEq dom1 dom2 2 5
 
 -- FCSP Example
 
@@ -95,23 +90,17 @@ d3 = (,,) <$> dx <*> dy <*> dz
 
 [a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]
 
--- TBD: domain
 c1 :: FuzzyRelation3 Int Int Int RGrade
-c1 = mfFuzzySet f d3 where
-  f :: FuzzyRelationGrade3 Int Int Int RGrade
-  f (x, y, z) = if x + y + z == 7 then maxBound else minBound
+c1 (x, y, z) = if x + y + z == 7 then maxBound else minBound
 
 c2 :: MapFuzzySet Int RGrade
 c2 = fromList [(1, a3), (2, 1), (3, a3)]
 
-c3 :: MFFuzzySet Int RGrade
-c3 = mfFuzzySet f dy where
-  f :: MembershipGrade Int RGrade
-  f y | y == 3 || y == 4 = 1
-      | otherwise        = a2
+c3 :: Membership Int RGrade
+c3 y | y == 3 || y == 4 = 1
+     | otherwise        = a2
 
-c4 :: MFFuzzySet Int RGrade
-c4 = mfFuzzySet f dx where
-  f x | x == 4           = 1
-      | x == 3 || x == 5 = a3
-      | otherwise        = a1
+c4 :: Membership Int RGrade
+c4 x | x == 4           = 1
+     | x == 3 || x == 5 = a3
+     | otherwise        = a1

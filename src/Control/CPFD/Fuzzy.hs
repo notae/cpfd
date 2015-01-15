@@ -12,8 +12,8 @@ import Data.Fuzzy
 -- Types
 
 type FS a = MapFuzzySet a RGrade
-type FR a b = MFFuzzySet (a, b) RGrade
-type FR1 a = MFFuzzySet (a, a) RGrade
+type FR a b = Membership (a, b) RGrade
+type FR1 a = Membership (a, a) RGrade
 
 
 -- FCSP Solver

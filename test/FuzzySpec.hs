@@ -16,10 +16,12 @@ spec = do
   fsetSpec
 
 instance Arbitrary DGrade where
+  -- TBD: ranged values
 --   arbitrary = fromRational <$> arbitrary
   arbitrary = elements [minBound, 0.3, 0.5, 0.8, maxBound]
 
 instance Arbitrary RGrade where
+  -- TBD: ranged values
   arbitrary = elements [minBound, 0.3, 0.5, 0.8, maxBound]
 
 gradeSpec :: Spec
@@ -46,9 +48,14 @@ gradeSpec = do
 --       (gradeAndRightIdProp :: RGrade -> Bool)
 
 type MFS = MapFuzzySet Int RGrade
+type MFFS = Membership Int RGrade
+-- type MFFS = MFFuzzySet' Int RGrade
 
 instance Arbitrary MFS where
   arbitrary = fromList <$> arbitrary
+
+-- instance Arbitrary MFFS where
+--   arbitrary = mfFuzzySet' <$> arbitrary
 
 fsetSpec :: Spec
 fsetSpec = do
@@ -64,6 +71,26 @@ fsetSpec = do
       (fsetIdProp :: MFS -> Bool)
     prop "$? comp"
       (fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Bool)
+  -- describe "Membership" $ do
+  --   return ()
+    -- TBD: function quality
+    -- prop "and-assoc"
+    --   (fuzzyAndAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
+    -- prop "or-assoc"
+    --   (fuzzyOrAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
+    -- TBD: not implemented
+    -- prop "not-not"
+    --   (fuzzyNotProp :: MFS -> Bool)
+  describe "MFFuzzySet'" $ do
+    return ()
+    -- TBD: function quality
+    -- prop "and-assoc"
+    --   (fuzzyAndAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
+    -- prop "or-assoc"
+    --   (fuzzyOrAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
+    -- TBD: not implemented
+    -- prop "not-not"
+    --   (fuzzyNotProp :: MFS -> Bool)
 
 fsetIdProp :: MFS -> Bool
 fsetIdProp s = (id ?$ s) == s
