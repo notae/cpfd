@@ -6,7 +6,10 @@
 {-# LANGUAGE StandaloneDeriving        #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
-module Control.CPFD.Fuzzy where
+module Control.CPFD.Fuzzy
+       (
+         FS, FR, FR1, FC (..), cons
+       ) where
 
 import Data.List   (foldl')
 import Debug.Trace (traceShow)
@@ -23,6 +26,8 @@ data FC g = forall s a. (FuzzySet s, Show (s a g)) => FC (s a g)
 deriving instance Show (FC g)
 
 -- FCSP Solver
+
+-- solve ::
 
 revise :: (Fuzzy (r (a, b) g), FuzzySet r,
            Fuzzy (s a g), Fuzzy (s b g), FuzzySet s, FuzzySetUpdate s,
