@@ -7,12 +7,16 @@
 
 module Data.Fuzzy
        (
+       -- * Basic Types
          Fuzzy (..)
-       , FValue, Grade, Membership
+       , FValue, Grade
+       , Membership
+       -- * Fuzzy Set Types
        , FuzzySet (..)
        , FuzzySetFromList (..)
        , FuzzySetUpdate (..)
        , DGrade, RGrade, (%)
+       -- * Fuzzy Set Instances
        , MapFuzzySet, (?$)
        , MFFuzzySet, mfFuzzySet
        , MFFuzzySet', mfFuzzySet'
@@ -38,13 +42,11 @@ class Fuzzy a where
   -- | Not (Complement)
   fnot :: a -> a
 
--- class (Ord v, Show v) => FValue v
 type FValue v = (Ord v, Show v)
 
 -- | Fuzzy grade
 -- (TBD: semiring ?)
 class (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g) => Grade g
--- type Grade g = (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g)
 
 class FuzzySet s where
   -- | A membership function.

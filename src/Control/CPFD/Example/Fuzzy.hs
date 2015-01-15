@@ -2,7 +2,12 @@
 
 {-# LANGUAGE ConstraintKinds #-}
 
-module Control.CPFD.Example.Fuzzy where
+module Control.CPFD.Example.Fuzzy
+       (
+         fs1, fs2
+       , testCons
+       , exFCSP
+       ) where
 
 import           Control.Applicative ((<$>), (<*>))
 import           Control.CPFD.Fuzzy
@@ -25,18 +30,6 @@ type FuzzyRelation a b g = Membership (a, b) g
 
 type FuzzyRelation3 a b c g = Membership (a, b, c) g
 
-fuzzyIntEq' :: Membership (Int, Int) DGrade
-fuzzyIntEq' (x, y) = fromRational (toRational g) where
-  iToD = fromInteger . toInteger
-  gToD = fromRational . toRational
-  d = abs (x - y)
-  c = 10
-  r = iToD d / iToD c
-  g, minB, maxB :: Double
-  minB = gToD (minBound :: DGrade)
-  maxB = gToD (maxBound :: DGrade)
-  g = if d < c then maxB - r else minB
-
 fuzzyIntEq :: Membership (Int, Int) RGrade
 fuzzyIntEq (x, y) = fromRational g where
   d = abs (x - y)
@@ -48,12 +41,6 @@ fuzzyIntEq (x, y) = fromRational g where
   g = if d < c then maxB - r else minB
 
 -- Fuzzy Constraint
-
--- type FuzzyArcProp a b =
---   FuzzyRelation a b -> FuzzySet a -> FuzzySet b -> (FuzzySet a, FuzzySet b)
-
-frdom :: [(Int, Int)]
-frdom = (,) <$> [0..10] <*> [0..10]
 
 dom1, dom2 :: Grade g => MapFuzzySet Int g
 dom1 = fromCoreList [0..10]
@@ -81,26 +68,23 @@ Example from:
 > }
 
 -}
-exFCSP :: [FuzzyRelation3 Int Int Int RGrade]
-exFCSP = [c1]
+exFCSP :: [FC RGrade]
+exFCSP = [FC c1, FC c2, FC c3, FC c4]
 
-d2 = (,,) <$> d <*> d
-d3 = (,,) <$> dx <*> dy <*> dz
-[d, dx, dy, dz] = [[0..7], d, d, d]
-
+a0, a1, a2, a3, a4 :: RGrade
 [a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]
 
 c1 :: FuzzyRelation3 Int Int Int RGrade
-c1 (x, y, z) = if x + y + z == 7 then maxBound else minBound
+c1 (x, y, z) = if x + y + z == 7 then a4 else a0
 
 c2 :: MapFuzzySet Int RGrade
 c2 = fromList [(1, a3), (2, 1), (3, a3)]
 
 c3 :: Membership Int RGrade
-c3 y | y == 3 || y == 4 = 1
+c3 y | y == 3 || y == 4 = a4
      | otherwise        = a2
 
 c4 :: Membership Int RGrade
-c4 x | x == 4           = 1
+c4 x | x == 4           = a4
      | x == 3 || x == 5 = a3
      | otherwise        = a1

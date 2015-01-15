@@ -1,6 +1,10 @@
 -- | Fuzzy Constraint Satisfaction Problem Solver
 
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ConstraintKinds           #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts          #-}
+{-# LANGUAGE StandaloneDeriving        #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 module Control.CPFD.Fuzzy where
 
@@ -15,6 +19,8 @@ type FS a = MapFuzzySet a RGrade
 type FR a b = Membership (a, b) RGrade
 type FR1 a = Membership (a, a) RGrade
 
+data FC g = forall s a. (FuzzySet s, Show (s a g)) => FC (s a g)
+deriving instance Show (FC g)
 
 -- FCSP Solver
 
