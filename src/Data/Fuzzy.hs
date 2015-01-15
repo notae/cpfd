@@ -20,6 +20,8 @@ module Data.Fuzzy
        , MapFuzzySet, (?$)
        , MFFuzzySet, mfFuzzySet
        , MFFuzzySet', mfFuzzySet'
+       -- * Map (re-export only type)
+       , Map
        ) where
 
 import           Control.Arrow       (first)
@@ -194,6 +196,27 @@ instance FuzzySetUpdate MapFuzzySet where
 infixr 4 ?$
 (?$) :: (Ord b, Grade g) => (a -> b) -> MapFuzzySet a g -> MapFuzzySet b g
 (?$) f (MapFuzzySet s) = MapFuzzySet (Map.mapKeysWith (?|) f s)
+
+instance (Ord a, Grade g) => Fuzzy (Map a g) where
+  x ?& y = z where
+    zs = support x `List.intersect` support y
+    z = fromList (map (\e -> (e, mu x e ?& mu y e)) zs)
+  x ?| y = z where
+    zs = support x `List.intersect` support y
+    z = fromList (map (\e -> (e, mu x e ?| mu y e)) zs)
+
+instance FuzzySet Map where
+  mu m x = fromMaybe minBound (Map.lookup x m)
+  support = Map.keys
+
+instance FuzzySetFromList Map where
+  fromList = Map.fromList
+
+instance FuzzySetUpdate Map where
+  update m x g =
+    if g == minBound
+    then Map.delete x m
+    else Map.insert x g m
 
 -- | Membership function.
 --   This can be regarded as fuzzy set based on membership function.
