@@ -47,19 +47,20 @@ gradeSpec = do
 --     prop "and-right-id"
 --       (gradeAndRightIdProp :: RGrade -> Bool)
 
-type MFS = MapFuzzySet Int RGrade
-type MFFS = Membership Int RGrade
--- type MFFS = MFFuzzySet' Int RGrade
+type MFS = Map Int RGrade
+type FS = Membership Int RGrade
+-- type MFS = MapFSet Int RGrade
+-- type MFFS = MFFSet' Int RGrade
 
 instance Arbitrary MFS where
   arbitrary = fromList <$> arbitrary
 
 -- instance Arbitrary MFFS where
---   arbitrary = mfFuzzySet' <$> arbitrary
+--   arbitrary = mfFSet' <$> arbitrary
 
 fsetSpec :: Spec
 fsetSpec = do
-  describe "MapFuzzySet" $ do
+  describe "Map" $ do
     prop "and-assoc"
       (fuzzyAndAssocProp :: MFS -> MFS -> MFS -> Bool)
     prop "or-assoc"
@@ -68,20 +69,10 @@ fsetSpec = do
     -- prop "not-not"
     --   (fuzzyNotProp :: MFS -> Bool)
     prop "$? id"
-      (fsetIdProp :: MFS -> Bool)
+      (fsetIdProp :: MFS -> Int -> Bool)
     prop "$? comp"
-      (fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Bool)
-  -- describe "Membership" $ do
-  --   return ()
-    -- TBD: function quality
-    -- prop "and-assoc"
-    --   (fuzzyAndAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
-    -- prop "or-assoc"
-    --   (fuzzyOrAssocProp :: MFFS -> MFFS -> MFFS -> Bool)
-    -- TBD: not implemented
-    -- prop "not-not"
-    --   (fuzzyNotProp :: MFS -> Bool)
-  describe "MFFuzzySet'" $ do
+      (fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Int -> Bool)
+  describe "Membership (->)" $ do
     return ()
     -- TBD: function quality
     -- prop "and-assoc"
@@ -91,12 +82,18 @@ fsetSpec = do
     -- TBD: not implemented
     -- prop "not-not"
     --   (fuzzyNotProp :: MFS -> Bool)
+    -- prop "$? id"
+    --   (fsetIdProp :: FS -> Int -> Bool)
+    -- prop "$? comp"
+    --   (fsetCompProp :: FS -> (Int -> Int) -> (Int -> Int) -> Int -> Bool)
 
-fsetIdProp :: MFS -> Bool
-fsetIdProp s = (id ?$ s) == s
+fsetIdProp :: (Fuzzy (s a g), FSetApply s, Ord a, Grade g) =>
+              (s a g) -> a -> Bool
+fsetIdProp s x = mu (id ?$ s) x == mu s x
 
-fsetCompProp :: MFS -> (Int -> Int) -> (Int -> Int) -> Bool
-fsetCompProp s f g = ((g . f) ?$ s) == (g ?$ f ?$ s)
+fsetCompProp :: (Fuzzy (s a g), FSetApply s, Ord a, Grade g) =>
+                (s a g) -> (a -> a) -> (a -> a) -> a -> Bool
+fsetCompProp s f g x = mu ((g . f) ?$ s) x == mu (g ?$ f ?$ s) x
 
 -- Typeclass Laws
 
