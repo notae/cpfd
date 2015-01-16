@@ -14,10 +14,11 @@ module Data.Fuzzy
        -- * Fuzzy Set Types
        , FuzzySet (..)
        , FuzzySetFromList (..)
+       , FuzzySetApply (..)
        , FuzzySetUpdate (..)
        , DGrade, RGrade, (%)
        -- * Fuzzy Set Instances
-       , MapFuzzySet, (?$)
+       , MapFuzzySet
        , MFFuzzySet, mfFuzzySet
        , MFFuzzySet', mfFuzzySet'
        -- * Map (re-export only type)
@@ -60,6 +61,10 @@ class FuzzySet s => FuzzySetFromList s where
   fromList :: (Ord a, Grade g) => [(a, g)] -> s a g
   fromCoreList :: (Ord a, Grade g) => [a] -> s a g
   fromCoreList xs = fromList (zip xs (repeat maxBound))
+
+class FuzzySet s => FuzzySetApply s where
+  infixr 4 ?$
+  (?$) :: (Ord b, Grade g) => (a -> b) -> s a g -> s b g
 
 class FuzzySet s => FuzzySetUpdate s where
   update :: (Ord a, Grade g) => s a g -> a -> g -> s a g
@@ -187,15 +192,16 @@ instance FuzzySet MapFuzzySet where
 instance FuzzySetFromList MapFuzzySet where
   fromList xs = MapFuzzySet (Map.fromList xs)
 
+instance FuzzySetApply MapFuzzySet where
+   f ?$ (MapFuzzySet s) = MapFuzzySet (Map.mapKeysWith (?|) f s)
+
 instance FuzzySetUpdate MapFuzzySet where
   update (MapFuzzySet m) x g = MapFuzzySet $
     if g == minBound
     then Map.delete x m
     else Map.insert x g m
 
-infixr 4 ?$
-(?$) :: (Ord b, Grade g) => (a -> b) -> MapFuzzySet a g -> MapFuzzySet b g
-(?$) f (MapFuzzySet s) = MapFuzzySet (Map.mapKeysWith (?|) f s)
+-- Fuzzy set based on Map
 
 instance (Ord a, Grade g) => Fuzzy (Map a g) where
   x ?& y = z where
@@ -211,6 +217,9 @@ instance FuzzySet Map where
 
 instance FuzzySetFromList Map where
   fromList = Map.fromList
+
+instance FuzzySetApply Map where
+   f ?$ s = Map.mapKeysWith (?|) f s
 
 instance FuzzySetUpdate Map where
   update m x g =
