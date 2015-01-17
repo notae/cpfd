@@ -6,7 +6,7 @@ module Control.CPFD.Example.Fuzzy
        (
          fs1, fs2
        , testCons
-       , exFCSP
+--       , exFCSP
        ) where
 
 import Control.CPFD.Fuzzy
@@ -52,7 +52,7 @@ dom2 = fromCoreList [0..10]
 7 % 10
 -}
 testCons :: RGrade
-testCons = cons fuzzyIntEq dom1 dom2 2 5
+testCons = arcCons fuzzyIntEq dom1 dom2 2 5
 
 -- FCSP Example
 
@@ -69,8 +69,42 @@ Example from:
 > }
 
 -}
+
+{-
 exFCSP :: [FC RGrade]
 exFCSP = [FC c1, FC c2, FC c3, FC c4]
+
+vx, vy, vz :: V Int
+[vx, vy, vz] = [V "x", V "y", V "z"]
+
+vs :: [NV]
+vs = [NV vx, NV vy, NV vz]
+
+pc1 :: PC (->) (Int, Int, Int) RGrade (Vs (Int, Int, Int))
+pc1 = PC c1 (vx, vy, vz)
+
+pc2 :: PC (->) Int RGrade (Vs Int)
+pc2 = PC c2 vz
+
+pc3 :: PC (->) Int RGrade (Vs Int)
+pc3 = PC c3 vy
+
+pc4 :: PC (->) Int RGrade (Vs Int)
+pc4 = PC c4 vx
+-}
+
+fcsp :: FR3 Int Int Int RGrade
+fcsp (x, y, z) = c1 (x, y, z) ?& c2 z ?& c3 y ?& c4 x
+
+fcsp' :: FR3 (Maybe Int) (Maybe Int) (Maybe Int) RGrade
+fcsp' (x, y, z) = g3 c1 (x, y, z) ?& g1 c2 z ?& g1 c3 y ?& g1 c4 x
+
+g1 :: FR1 a RGrade -> Maybe a -> RGrade
+g1 r (Just a) = r a
+g1 r Nothing  = maxBound
+
+g3 :: FR3 a b c RGrade -> (Maybe a, Maybe b, Maybe c) -> RGrade
+g3 r (a, b, c) = maxBound
 
 a0, a1, a2, a3, a4 :: RGrade
 [a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]
@@ -78,8 +112,13 @@ a0, a1, a2, a3, a4 :: RGrade
 c1 :: FR3 Int Int Int RGrade
 c1 (x, y, z) = if x + y + z == 7 then a4 else a0
 
-c2 :: FS Int RGrade
-c2 = fromList [(1, a3), (2, 1), (3, a3)]
+c2 :: FR1 Int RGrade
+c2 z | z == 2           = a4
+     | z == 1 || z == 3 = a3
+     | otherwise        = a0
+
+c2' :: FS Int RGrade
+c2' = fromList [(1, a3), (2, 1), (3, a3)]
 
 c3 :: FR1 Int RGrade
 c3 y | y == 3 || y == 4 = a4

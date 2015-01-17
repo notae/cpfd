@@ -21,6 +21,8 @@ module Data.Fuzzy
        , MapFSet
        , MFFSet, mfFSet
        , MFFSet', mfFSet'
+       -- * Type Synonyms
+       , FS, FR, FR1, FR2, FR3, FRN
        -- * Map (re-export only type)
        , Map
        ) where
@@ -290,3 +292,23 @@ instance (Ord a, Grade g) => Fuzzy (MFFSet' a g) where
 instance FSet MFFSet' where
   mu MFFSet'{..} e = mf' e
 --   support MFFSet{..} = Set.toList (Set.filter (\e -> mf e > minBound ) mfDom)
+
+-- Type synonyms
+
+-- | Fuzzy set
+type FS a g = Map a g
+
+-- | Fuzzy binary (arc) relation with single type
+type FR a g = Membership (a, a) g
+
+-- | Fuzzy unary relation
+type FR1 a g = Membership a g
+
+-- | Fuzzy binary (arc) relation
+type FR2 a b g = Membership (a, b) g
+
+-- | Fuzzy ternary relation
+type FR3 a b c g = Membership (a, b, c) g
+
+-- | Fuzzy n-ary (hyper-arc) relation with single type
+type FRN a g = Membership [a] g
