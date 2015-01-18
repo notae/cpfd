@@ -2,12 +2,9 @@
 
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE ExistentialQuantification  #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
-{-# LANGUAGE UndecidableInstances       #-}
 
 module Control.CPFD.Fuzzy
        (
@@ -43,11 +40,10 @@ module Control.CPFD.Fuzzy
        , neqmod
        , alldiffmod
        -- * Fuzzy related (for experimental)
-       , arcCons
+       , revise, arcCons
        ) where
 
-import           Control.Applicative   (Applicative, WrappedMonad (..), (<$>),
-                                        (<*>))
+import           Control.Applicative   (Applicative, (<$>))
 import           Control.Monad         (forM, liftM, replicateM, unless, when)
 import           Control.Monad.ST.Lazy (ST, runST)
 import           Control.Monad.State   (StateT, evalStateT)
@@ -69,6 +65,7 @@ import           Control.CPFD.Domain         (Domain, FDValue)
 import qualified Control.CPFD.Domain         as Domain
 import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
+import           Data.Container
 import           Data.Fuzzy
 
 -- | Monad for constraints on finite domain
@@ -178,39 +175,6 @@ data NVar s = forall v. FDValue v => NVar (Var s v)
 
 instance Show (NVar s) where
   show = showNVar'
-
-class ContainerMap c where
-  cmapA :: Applicative f =>
-           (forall a. FDValue a => t a -> f (t' a)) -> c t -> f (c t')
-  cmapM :: Monad m =>
-           (forall a. FDValue a => t a -> m (t' a)) -> c t -> m (c t')
-  cmapM f = unwrapMonad . cmapA (WrapMonad . f)
-  fromContainer :: (forall a. FDValue a => t a -> t') -> c t -> [t']
-
-class ContainerLift c c' where
-  cup :: (forall a. a -> t a) -> c' -> c t
-  cdown :: (forall a. t a -> a) -> c t -> c'
-
--- | Container to hold data (variable domain, reference,
--- assignment, etc.) related to variables.
-class (ContainerMap c, ContainerLift c c') => Container c c'
-
--- | (for internal use)
-newtype CTraversable t' v t =
-  CTraversable { unCTraversable :: t' (t v) } deriving (Eq, Show)
-
-instance (FDValue v, Traversable t') =>
-         ContainerMap (CTraversable t' v) where
-  cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
-  fromContainer f (CTraversable ts) = Foldable.toList $ fmap f ts
-
-instance Traversable t' => ContainerLift (CTraversable t' v) (t' v) where
-  cup f ts = CTraversable $ fmap f ts
-  cdown f (CTraversable ts) = fmap f ts
-
-instance (ContainerMap (CTraversable t' v),
-          ContainerLift (CTraversable t' v) (t' v)) =>
-         Container (CTraversable t' v) (t' v)
 
 -- | Variable list
 type VarList s = STRef s [NVar s]

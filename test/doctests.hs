@@ -10,4 +10,5 @@ main = doctest [ "src/Control/CPFD.hs"
                , "src/Control/CPFD/Example/Sudoku.hs"
                , "src/Control/CPFD/Fuzzy.hs"
                , "src/Control/CPFD/Example/Fuzzy.hs"
+               , "src/Data/Container.hs"
                , "src/Data/Fuzzy.hs" ]

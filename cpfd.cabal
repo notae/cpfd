@@ -57,6 +57,7 @@ library
                      , Control.CPFD.Example.Sudoku
                      , Control.CPFD.Fuzzy
                      , Control.CPFD.Example.Fuzzy
+                     , Data.Container
                      , Data.Fuzzy
 
   -- Modules included in this library but not exported.
