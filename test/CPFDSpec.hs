@@ -2,14 +2,15 @@
 
 module CPFDSpec where
 
+import Control.Applicative   ((<$>), (<*>))
 import Test.Hspec
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck       hiding ((.&.))
 
-import           Control.Applicative ((<$>), (<*>))
 import           Control.CPFD
-import qualified Data.Domain         as Domain
-import           Data.List           (nub, sort)
+import           Control.CPFD.Crisp.Primitives
+import qualified Data.Domain                   as Domain
+import           Data.List                     (nub, sort)
 
 instance (Arbitrary a, Ord a) => Arbitrary (Domain a) where
   arbitrary = Domain.fromList <$> arbitrary

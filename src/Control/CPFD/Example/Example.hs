@@ -16,13 +16,13 @@ Portability : POSIX
 
 module Control.CPFD.Example.Example where
 
-import           Control.Applicative ((<$>), (<*>))
-import           Control.CPFD
-import           Control.Monad       (forM_)
-import qualified Data.Domain         as Domain
-import           Data.List           (sort)
-import           Data.Traversable    (traverse)
+import Control.Applicative ((<$>), (<*>))
+import Control.Monad       (forM_)
+import Data.List           (sort)
+import Data.Traversable    (traverse)
 
+import           Control.CPFD
+import qualified Data.Domain  as Domain
 
 {-|
 >>> sort $ runFD test1
