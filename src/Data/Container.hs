@@ -12,7 +12,7 @@ import qualified Data.Foldable       as Foldable
 import           Data.Traversable    (Traversable)
 import qualified Data.Traversable    as Traversable
 
-import Control.CPFD.Domain (FDValue)
+import Data.Domain (FDValue)
 
 class ContainerMap c where
   cmapA :: Applicative f =>

@@ -1,5 +1,5 @@
 {-|
-Module      : Control.CPFD.Domain
+Module      : Data.Domain
 Description : Finite Domain
 Copyright   : (c) notae@me.com, 2014
 License     : BSD-style
@@ -10,7 +10,7 @@ Portability : POSIX
 
 {-# LANGUAGE ConstraintKinds #-}
 
-module Control.CPFD.Domain
+module Data.Domain
        (
        -- * Types
          FDValue

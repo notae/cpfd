@@ -70,11 +70,11 @@ import           Data.Traversable      (Traversable)
 import qualified Data.Traversable      as Traversable
 import           Debug.Trace           (traceM)
 
-import           Control.CPFD.Domain         (Domain, FDValue)
-import qualified Control.CPFD.Domain         as Domain
 import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
 import           Data.Container
+import           Data.Domain                 (Domain, FDValue)
+import qualified Data.Domain                 as Domain
 
 -- | Monad for constraints on finite domain
 newtype FD s a =

@@ -18,8 +18,8 @@ module Control.CPFD.Example.Example where
 
 import           Control.Applicative ((<$>), (<*>))
 import           Control.CPFD
-import qualified Control.CPFD.Domain as Domain
 import           Control.Monad       (forM_)
+import qualified Data.Domain         as Domain
 import           Data.List           (sort)
 import           Data.Traversable    (traverse)
 
