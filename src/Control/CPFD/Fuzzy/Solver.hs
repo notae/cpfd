@@ -31,7 +31,8 @@ module Control.CPFD.Fuzzy.Solver
        ) where
 
 import           Control.Applicative   (Applicative, (<$>))
-import           Control.Monad         (forM, liftM, replicateM, unless, when)
+import           Control.Monad         (foldM, forM, liftM, replicateM, unless,
+                                        when)
 import           Control.Monad.ST.Lazy (ST, runST)
 import           Control.Monad.State   (StateT, evalStateT)
 import qualified Control.Monad.State   as State
@@ -63,7 +64,7 @@ newtype FD s a =
   deriving (Functor, Applicative, Monad)
 
 instance Show (FD s a) where
-  show fd = "<FD>"
+  show _ = "<FD>"
 
 -- | (for internal use)
 liftST :: ST s a -> FD s a
@@ -147,12 +148,14 @@ data VarPropagator s =
   { vpName   :: String
   , vpVars   :: [NVar s]
   , vpAction :: FD s () }
+  deriving (Show)
 
 -- | Propagate the specified domain changing to other domains.
 data Propagator s =
   Propagator
   { propVar  :: NVar s
   , propProp :: VarPropagator s }
+  deriving (Show)
 
 -- | Finite domain variable
 data Var s v =
@@ -392,30 +395,39 @@ pop = do
   mapM_ __pop vs
 
 -- | Label variables specified in Traversable.
-labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s [(t v, RGrade)]
-labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
+labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s ([(t v, RGrade)], BState (t v))
+labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBState
 
 -- | Label variables specified in Container.
-labelC :: Container c c' => c (Var s) -> FD s [(c', RGrade)]
-labelC c = labelC' c (fromContainer NVar c)
+labelC :: Container c c' => c (Var s) -> FD s ([(c', RGrade)], BState c')
+labelC c = labelC' c (fromContainer NVar c) initBState
 
-labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [(c', RGrade)]
-labelC' c nvs =
+type BState a = (Maybe a, RGrade, RGrade)
+initBState :: BState a
+initBState = (Nothing, minBound, maxBound)
+
+labelC' :: Container c c' => c (Var s) -> [NVar s] -> BState c'
+           -> FD s ([(c', RGrade)], BState c')
+labelC' c nvs b@(best, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
       g <- getConsDeg
-      return [(cdown head c', g)]
+      let c'' = cdown head c'
+      let (best', bInf', bSup') = if g > bInf
+                                  then (Just c'', g, bSup)
+                                  else b
+      return ([(c'', g)], (best', bInf', bSup'))
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
-      liftM concat $ forM d $ \i -> do
+      flip (flip foldM ([], b)) d $ \(ss, b2) i -> do
         push
         traceM' $ "labelC': " ++ show v ++ "=" ++ show i
         setS v i
-        s <- labelC' c nvss
+        (s, b2'@(best', bInf', bSup')) <- labelC' c nvss b2
         pop
-        return s
+        return (ss ++ s, b2')
 
 -- | Degree of consistency
 getConsDeg :: FD s RGrade
