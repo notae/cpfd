@@ -6,7 +6,7 @@ module Control.CPFD.Example.Fuzzy
        (
          fs1, fs2
        , testCons
---       , exFCSP
+       , exFCSP
        ) where
 
 import Control.CPFD.Fuzzy
@@ -106,7 +106,11 @@ g1 r Nothing  = maxBound
 g3 :: FR3 a b c RGrade -> (Maybe a, Maybe b, Maybe c) -> RGrade
 g3 r (a, b, c) = maxBound
 
-testFCSP = runFD' $ do
+{-|
+>>> exFCSP
+([([0,4,3],3 % 10),([3,1,3],1 % 2),([3,3,1],7 % 10)],(Just [3,3,1],7 % 10,1 % 1))
+-}
+exFCSP = runFD $ do
   x <- newL [0..7]
   y <- newL [0..7]
   z <- newL [0..7]
