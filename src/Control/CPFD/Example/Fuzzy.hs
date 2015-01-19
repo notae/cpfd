@@ -106,11 +106,24 @@ g1 r Nothing  = maxBound
 g3 :: FR3 a b c RGrade -> (Maybe a, Maybe b, Maybe c) -> RGrade
 g3 r (a, b, c) = maxBound
 
+testFCSP = runFD' $ do
+  x <- newL [0..7]
+  y <- newL [0..7]
+  z <- newL [0..7]
+  (addN "c1" c1') [x, y, z]
+  (add1 "c2" c2) z
+  (add1 "c3" c3) y
+  (add1 "c4" c4) x
+  labelT [x, y, z]
+
 a0, a1, a2, a3, a4 :: RGrade
 [a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]
 
 c1 :: FR3 Int Int Int RGrade
 c1 (x, y, z) = if x + y + z == 7 then a4 else a0
+
+c1' :: FRN Int RGrade
+c1' xs = if sum xs == 7 then a4 else a0
 
 c2 :: FR1 Int RGrade
 c2 z | z == 2           = a4

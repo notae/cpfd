@@ -20,12 +20,9 @@ module Control.CPFD.Fuzzy.Solver
        , new, newL, newN, newNL, newT, newTL, newCL
        , set, setS, setL, get, getL
        -- * Constraint Store
+       , add1, add2, addN
        -- * Labelling
        , labelT, labelC
-       -- * Primitive Constraint
-       -- ** Core Constraint
-       -- ** Arithmetic Constraint
-       -- ** Modulo Constraint
        -- * Fuzzy related (for experimental)
        , revise, arcCons
        ) where
@@ -42,7 +39,7 @@ import qualified Control.Monad.Writer  as Writer
 import           Data.Foldable         (Foldable)
 import qualified Data.Foldable         as Foldable
 import           Data.List             (foldl')
-import           Data.Maybe            (listToMaybe)
+import           Data.Maybe            (fromMaybe, listToMaybe)
 import           Data.STRef.Lazy       (STRef)
 import qualified Data.STRef.Lazy       as STRef
 import           Data.Traversable      (Traversable)
@@ -53,10 +50,10 @@ import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
 import           Data.Container
 import           Data.Fuzzy                  ((?&), (?|))
-import           Data.Fuzzy                  (FR, FR2, FS, FSet, FSetUpdate,
-                                              FValue, Fuzzy, Grade, RGrade)
+import           Data.Fuzzy                  (FR, FR1, FR2, FRN, FS, FSet,
+                                              FSetUpdate, FValue, Fuzzy, Grade,
+                                              RGrade)
 import qualified Data.Fuzzy                  as Fuzzy
-import           Data.Maybe                  (fromMaybe)
 
 -- | Monad for constraints on finite domain
 newtype FD s a =
@@ -408,7 +405,7 @@ initBState = (Nothing, minBound, maxBound)
 
 labelC' :: Container c c' => c (Var s) -> [NVar s] -> BState c'
            -> FD s ([(c', RGrade)], BState c')
-labelC' c nvs b@(best, bInf, bSup) =
+labelC' c nvs b@(_, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
@@ -421,11 +418,15 @@ labelC' c nvs b@(best, bInf, bSup) =
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
-      flip (flip foldM ([], b)) d $ \(ss, b2) i -> do
+      flip (`foldM` ([], b)) d $ \(ss, b2@(_, bInf2, bSup2)) i -> do
         push
         traceM' $ "labelC': " ++ show v ++ "=" ++ show i
         setS v i
-        (s, b2'@(best', bInf', bSup')) <- labelC' c nvss b2
+        g <- getConsDeg
+--         g <- return maxBound
+        (s, b2') <- if g > bInf2
+                    then labelC' c nvss b2
+                    else return ([], b2)
         pop
         return (ss ++ s, b2')
 
@@ -453,13 +454,24 @@ deleteFindMin nvs = do
 add :: Var s v -> VarPropagator s -> FD s ()
 add v p = modifySTRef (varProp v) $ \ps -> p:ps
 
--- | Add a propagator to the variables and invoke it
+add1 :: FDValue v => String -> FR1 v RGrade -> Var s v -> FD s ()
+add1 n r v = do
+  traceM' $ "add1: " ++ n ++ " " ++ show v
+  addCons Constraint { consName = n, consVars = [NVar v],
+                       consGrade = primCons1 r v }
+
+primCons1 :: FDValue v => FR1 v RGrade -> Var s v -> FD s RGrade
+primCons1 r v = do
+  mx <- getS v
+  let g = r <$> mx
+  return $ fromMaybe maxBound g
+
 add2 :: (FDValue v1, FDValue v2) =>
         String -> FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s ()
 add2 n r v1 v2 = do
   traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
   addCons Constraint { consName = n, consVars = [NVar v1, NVar v2],
-                       consGrade = primCons r v1 v2 }
+                       consGrade = primCons2 r v1 v2 }
 {-
   let vp1 = VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2],
                             vpAction = arcProp r v2 v1 }
@@ -471,9 +483,9 @@ add2 n r v1 v2 = do
   arcProp r v2 v1
 -}
 
-primCons :: (FDValue v1, FDValue v2) =>
-            FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s RGrade
-primCons r v1 v2 = do
+primCons2 :: (FDValue v1, FDValue v2) =>
+             FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s RGrade
+primCons2 r v1 v2 = do
   mx1 <- getS v1
   mx2 <- getS v2
   let g = do
@@ -500,13 +512,23 @@ arcProp r v1 v2 = do
     set v1 x1'
     return ()
 
--- | Add a propagator to the variables and invoke it
-adds :: FDValue v => String -> [Var s v] -> FD s () -> FD s ()
-adds n vs a = do
-  traceM' $ "adds: " ++ n ++ " " ++ show vs
+addN :: FDValue v => String -> FRN v RGrade -> [Var s v] -> FD s ()
+addN n r vs = do
+  traceM' $ "addN: " ++ n ++ " " ++ show vs
+  addCons Constraint { consName = n, consVars = map NVar vs,
+                       consGrade = primConsN r vs }
+{-
   let vp = VarPropagator { vpName = n, vpVars = map NVar vs, vpAction = a}
   mapM_ (`add` vp) vs
   a
+-}
+
+primConsN :: FDValue v => FRN v RGrade -> [Var s v] -> FD s RGrade
+primConsN r vs = do
+  mxs <- mapM getS vs
+  let xs = sequence mxs
+  let g = r <$> xs
+  return $ fromMaybe maxBound g
 
 -- Primitive constraints
 
@@ -553,9 +575,11 @@ testFCSP = runFD' $ do
   x <- newL [0..2]
   y <- newL [2..4]
   z <- newL [4..6]
+  w <- newL [6..8]
   x `fcIntEq` y
   y `fcIntEq` z
-  labelT [x, y, z]
+  z `fcIntEq` w
+  labelT [x, y, z, w]
 
 fcIntEq :: Var s Int -> Var s Int -> FD s ()
 fcIntEq = add2 "fcIntEq" frIntEq
