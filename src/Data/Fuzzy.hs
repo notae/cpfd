@@ -73,7 +73,7 @@ class FSet s => FSetApply s where
 class FSet s => FSetUpdate s where
   update :: (Ord a, Grade g) => s a g -> a -> g -> s a g
 
--- | Fuzzy grade based on Double.
+-- | Fuzzy grade based on 'Double'.
 newtype DGrade =
   DGrade { unDGrade :: Double }
   deriving (Eq, Ord, Enum)
@@ -113,7 +113,7 @@ instance Read DGrade where
 
 instance Grade DGrade
 
--- | Fuzzy grade based on Rational.
+-- | Fuzzy grade based on 'Rational'.
 newtype RGrade =
   RGrade { unRGrade :: Rational }
   deriving (Eq, Ord, Enum)

@@ -4,7 +4,7 @@
 
 module Control.CPFD.Example.Fuzzy
        (
-         fs1, fs2
+         fs1, fs2, fs3
        , testCons
        , exFCSP
        ) where
@@ -69,46 +69,11 @@ Example from:
 > }
 
 -}
-
-{-
-exFCSP :: [FC RGrade]
-exFCSP = [FC c1, FC c2, FC c3, FC c4]
-
-vx, vy, vz :: V Int
-[vx, vy, vz] = [V "x", V "y", V "z"]
-
-vs :: [NV]
-vs = [NV vx, NV vy, NV vz]
-
-pc1 :: PC (->) (Int, Int, Int) RGrade (Vs (Int, Int, Int))
-pc1 = PC c1 (vx, vy, vz)
-
-pc2 :: PC (->) Int RGrade (Vs Int)
-pc2 = PC c2 vz
-
-pc3 :: PC (->) Int RGrade (Vs Int)
-pc3 = PC c3 vy
-
-pc4 :: PC (->) Int RGrade (Vs Int)
-pc4 = PC c4 vx
--}
-
-fcsp :: FR3 Int Int Int RGrade
-fcsp (x, y, z) = c1 (x, y, z) ?& c2 z ?& c3 y ?& c4 x
-
-fcsp' :: FR3 (Maybe Int) (Maybe Int) (Maybe Int) RGrade
-fcsp' (x, y, z) = g3 c1 (x, y, z) ?& g1 c2 z ?& g1 c3 y ?& g1 c4 x
-
-g1 :: FR1 a RGrade -> Maybe a -> RGrade
-g1 r (Just a) = r a
-g1 r Nothing  = maxBound
-
-g3 :: FR3 a b c RGrade -> (Maybe a, Maybe b, Maybe c) -> RGrade
-g3 r (a, b, c) = maxBound
-
 {-|
 >>> exFCSP
 ([([0,4,3],3 % 10),([3,1,3],1 % 2),([3,3,1],7 % 10)],(Just [3,3,1],7 % 10,1 % 1))
+
+@[3,3,1]@ is the best solution with satisfaction grade @7 % 10@.
 -}
 exFCSP = runFD $ do
   x <- newL [0..7]
