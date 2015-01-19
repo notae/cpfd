@@ -17,11 +17,9 @@ module Control.CPFD.Fuzzy.Solver
        , Var
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
-       , new, newL, newN, newNL, newT, newTL, newC, newCL
+       , new, newL, newN, newNL, newT, newTL, newCL
        , set, setS, setL, get, getL
        -- * Constraint Store
-       , ArcPropRule, ArcConstraint, arcConstraint
-       , MultiPropRule, MultiConstraint, multiConstraint
        -- * Labelling
        , labelT, labelC
        -- * Primitive Constraint
@@ -53,14 +51,19 @@ import           Debug.Trace           (traceM)
 import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
 import           Data.Container
-import           Data.Domain                 (Domain, FDValue)
-import qualified Data.Domain                 as Domain
-import           Data.Fuzzy
+import           Data.Fuzzy                  ((?&), (?|))
+import           Data.Fuzzy                  (FR, FR2, FS, FSet, FSetUpdate,
+                                              FValue, Fuzzy, Grade, RGrade)
+import qualified Data.Fuzzy                  as Fuzzy
+import           Data.Maybe                  (fromMaybe)
 
 -- | Monad for constraints on finite domain
 newtype FD s a =
   FD { unFD :: WriterT [String] (StateT (FDState s) (ST s)) a }
   deriving (Functor, Applicative, Monad)
+
+instance Show (FD s a) where
+  show fd = "<FD>"
 
 -- | (for internal use)
 liftST :: ST s a -> FD s a
@@ -108,6 +111,7 @@ data FDState s =
   , lastVarId :: STRef s Int
   , propQueue :: STRef s (Queue (Propagator s))
   , propStack :: STRef s [String]
+  , fdCons    :: STRef s [Constraint s]
   , traceFlag :: Bool }
 
 -- | Run FD monad
@@ -121,14 +125,16 @@ runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper Tr
 -- | (for internal use)
 fdWrapper :: Bool -> FD s a -> FD s a
 fdWrapper tf fd = do
-  vl <- newVarList
+  vl  <- newVarList
   rvi <- newSTRef 0
   rpq <- newSTRef Queue.empty
   rst <- newSTRef []
+  rc  <- newSTRef []
   put FDState { varList = vl
               , lastVarId = rvi
               , propQueue = rpq
               , propStack = rst
+              , fdCons    = rc
               , traceFlag = tf }
   traceFD "Initialized."
   a <- fd
@@ -155,6 +161,9 @@ data Var s v =
   , varDomain :: STRef s (Domain v)
   , varStack  :: STRef s [Domain v]
   , varProp   :: STRef s [VarPropagator s] }
+
+type Domain v = FS v RGrade
+type FDValue v = Fuzzy.FValue v
 
 instance Show (Var s v) where
   show v = "_" ++ show (varId v)
@@ -194,6 +203,23 @@ traceM' s = do
   f <- gets traceFlag
   when f $ traceM s
 
+data Constraint s =
+  Constraint
+  { consName  :: String        -- | for debug
+  , consVars  :: [NVar s]      -- | for debug
+  , consGrade :: FD s RGrade
+  } deriving (Show)
+
+getCons :: FD s [Constraint s]
+getCons = do
+  rc <- gets fdCons
+  readSTRef rc
+
+addCons :: Constraint s -> FD s ()
+addCons c = do
+  rc <- gets fdCons
+  modifySTRef rc $ \cs -> c : cs
+
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
@@ -226,20 +252,9 @@ get v = do
 -- | Set domain of the variable and invoke propagators.
 set :: FDValue v => Var s v -> Domain v -> FD s ()
 set v d = do
-  let vd = varDomain v
-  let vp = varProp v
-  old <- readSTRef vd
-  let sd   = Domain.size d
-  let sold = Domain.size old
-  if sd < sold
-    then do
-      writeSTRef vd d
-      p <- readSTRef vp
-      enqProp v p
-    else unless (sd == sold) $ do
-      pq <- getPropQueue
-      error $ "Internal error: tried to enlarge domain: " ++
-        show old ++ " -> " ++ show d ++ "\npropQueue:\n" ++ unlines pq
+  writeSTRef (varDomain v) d
+  p <- readSTRef (varProp v)
+  enqProp v p
 
 -- | (for debug)
 getPropQueue :: FD s [String]
@@ -295,7 +310,7 @@ popPropStack = do
 
 -- | Same as 'new' except to take a list as domain.
 newL :: FDValue v => [v] -> FD s (Var s v)
-newL d = new (Domain.fromList d)
+newL d = new (Fuzzy.fromCoreList d)
 
 -- | Same as 'new' except to take a number of variables to create.
 newN :: FDValue v => Int -> Domain v -> FD s [Var s v]
@@ -313,9 +328,11 @@ newT = Traversable.mapM new
 newTL :: (FDValue v, Traversable t) => t [v] -> FD s (t (Var s v))
 newTL = Traversable.mapM newL
 
+{-
 -- | Same as 'new' except to take a Container containing domains.
 newC :: ContainerMap c => c Domain -> FD s (c (Var s))
 newC = cmapM new
+-}
 
 -- | Same as 'new' except to take a Container containing domains.
 newCL :: ContainerMap c => c [] -> FD s (c (Var s))
@@ -323,11 +340,11 @@ newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
 getL :: FDValue v => Var s v -> FD s [v]
-getL v = Domain.toList <$> get v
+getL v = Fuzzy.support <$> get v
 
 -- | Same as 'get' except to return a Maybe as domain.
 getM :: FDValue v => Var s v -> FD s (Maybe v)
-getM v = (listToMaybe . Domain.toList) <$> get v
+getM v = (listToMaybe . Fuzzy.support) <$> get v
 
 -- | Same as 'get' except to return a list as domain in Container.
 getCL :: ContainerMap c => c (Var s) -> FD s (c [])
@@ -339,11 +356,11 @@ getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
 setS :: FDValue v => Var s v -> v -> FD s ()
-setS v val = set v (Domain.singleton val)
+setS v val = set v (Fuzzy.fromCoreList [val])
 
 -- | Same as 'set' except to take a list as domain.
 setL :: FDValue v => Var s v -> [v] -> FD s ()
-setL v d = set v (Domain.fromList d)
+setL v d = set v (Fuzzy.fromCoreList d)
 
 -- Labeling
 
@@ -375,19 +392,20 @@ pop = do
   mapM_ __pop vs
 
 -- | Label variables specified in Traversable.
-labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s [t v]
+labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s [(t v, RGrade)]
 labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
-labelC :: Container c c' => c (Var s) -> FD s [c']
+labelC :: Container c c' => c (Var s) -> FD s [(c', RGrade)]
 labelC c = labelC' c (fromContainer NVar c)
 
-labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [c']
+labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [(c', RGrade)]
 labelC' c nvs =
   case nvs of
     [] -> do
       c' <- getCL c
-      return [cdown head c']
+      g <- getConsDeg
+      return [(cdown head c', g)]
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
@@ -399,11 +417,18 @@ labelC' c nvs =
         pop
         return s
 
+-- | Degree of consistency
+getConsDeg :: FD s RGrade
+getConsDeg = do
+  cr <- getCons
+  gs <- mapM consGrade cr
+  return $ foldl' (?&) maxBound gs
+
 -- | (for internal)
 deleteFindMin :: [NVar s] -> FD s (NVar s, [NVar s])
 deleteFindMin nvs = do
   vdss <- forM nvs $
-          \(NVar v) -> Domain.size <$> readSTRef (varDomain v)
+          \(NVar v) -> Fuzzy.size <$> readSTRef (varDomain v)
   let smin = minimum vdss
   let (former, latter) = span (\(vds, _) -> vds /= smin) $ zip vdss nvs
   let nvsmin = snd $ head latter
@@ -418,13 +443,50 @@ add v p = modifySTRef (varProp v) $ \ps -> p:ps
 
 -- | Add a propagator to the variables and invoke it
 add2 :: (FDValue v1, FDValue v2) =>
-        String -> Var s v1 -> Var s v2 -> FD s () -> FD s ()
-add2 n v1 v2 a = do
+        String -> FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s ()
+add2 n r v1 v2 = do
   traceM' $ "add2: " ++ n ++ " " ++ show (v1, v2)
-  let vp = VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2], vpAction = a }
-  add v1 vp
-  add v2 vp
-  a
+  addCons Constraint { consName = n, consVars = [NVar v1, NVar v2],
+                       consGrade = primCons r v1 v2 }
+{-
+  let vp1 = VarPropagator { vpName = n, vpVars = [NVar v1, NVar v2],
+                            vpAction = arcProp r v2 v1 }
+  let vp2 = VarPropagator { vpName = n, vpVars = [NVar v2, NVar v1],
+                            vpAction = arcProp r v2 v1}
+  add v1 vp1
+  add v2 vp2
+  arcProp r v1 v2
+  arcProp r v2 v1
+-}
+
+primCons :: (FDValue v1, FDValue v2) =>
+            FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s RGrade
+primCons r v1 v2 = do
+  mx1 <- getS v1
+  mx2 <- getS v2
+  let g = do
+        x1 <- mx1
+        x2 <- mx2
+        return $ r (x1, x2)
+  return $ fromMaybe maxBound g
+
+getS :: FDValue v => Var s v -> FD s (Maybe v)
+getS v = do
+  x <- get v
+  return $ if Fuzzy.size x == 1 then Just (head (Fuzzy.support x)) else Nothing
+
+arcProp :: (FDValue v1, FDValue v2) =>
+           FR2 v1 v2 RGrade -> Var s v1 -> Var s v2 -> FD s ()
+arcProp r v1 v2 = do
+  let sup = maxBound
+  -- sup <- getSup
+  x1 <- get v1
+  x2 <- get v2
+  let (sup', changed, x1') = revise r x1 x2 sup
+  -- setSup sup'
+  when changed $ do
+    set v1 x1'
+    return ()
 
 -- | Add a propagator to the variables and invoke it
 adds :: FDValue v => String -> [Var s v] -> FD s () -> FD s ()
@@ -434,65 +496,7 @@ adds n vs a = do
   mapM_ (`add` vp) vs
   a
 
--- Utilities for variable domain propagator
-
--- | Domain propagator for arc
-type ArcPropRule a b = Domain a -> Domain b -> (Domain a, Domain b)
-
-type ArcConstraint s a b = Var s a -> Var s b -> FD s ()
-
--- | Create arc constraint from propagator
-arcConstraint :: (FDValue a, FDValue b) =>
-                 String -> ArcPropRule a b -> ArcConstraint s a b
-arcConstraint n c x y = add2 n x y $ do
-  dx <- get x
-  dy <- get y
-  let (dx', dy') =
-        if Domain.null dx || Domain.null dy
-        then (Domain.empty, Domain.empty)
-        else c dx dy
-  traceM' $ "arcConstraint: " ++ n ++ show (x, y) ++ ": "
-    ++ show dx ++ " -> " ++ show dx' ++ ", "
-    ++ show dy ++ " -> " ++ show dy'
-  when (Domain.size dx < Domain.size dx' || Domain.size dy < Domain.size dy') $
-    error $ "arcConstraint: invalid: "
-      ++ show dx ++ " -> " ++ show dx' ++ ", "
-      ++ show dy ++ " -> " ++ show dy'
-  set x dx'
-  set y dy'
-
--- | Domain propagator for multiple-arc
-type MultiPropRule v = [Domain v] -> [Domain v]
-
-type MultiConstraint s v = [Var s v] -> FD s ()
-
--- | Create hyper-arc constraint from propagator
-multiConstraint :: FDValue v =>
-                   String -> MultiPropRule v -> MultiConstraint s v
-multiConstraint n c vs = adds n vs $ do
-  ds <- mapM get vs
-  let ds' =
-        if any Domain.null ds
-        then map (const Domain.empty) ds
-        else c ds
-  traceM' $ "multiConstraint: " ++ n ++ show vs ++  ": "
-    ++ show ds ++ " -> " ++ show ds'
-  when (any (\(d, d') -> Domain.size d < Domain.size d') $ zip ds ds') $
-    error $ "multiConstraint: invalid: " ++ show ds ++ " -> " ++ show ds'
-  (`mapM_` zip vs ds') $ uncurry set
-
--- | General arc constraint
-cGeneralArc :: (FDValue a, FDValue b) =>
-               String -> (a -> b -> Bool) -> ArcConstraint s a b
-cGeneralArc n p = arcConstraint n (pGeneralArc p)
-
-pGeneralArc :: (FDValue a, FDValue b) => (a -> b -> Bool) -> ArcPropRule a b
-pGeneralArc p dx dy = (dx', dy') where
-  dx' = Domain.filter (\x -> any (x `p`) (Domain.toList dy)) dx
-  dy' = Domain.filter (\y -> any (`p` y) (Domain.toList dx)) dy
-
 -- Primitive constraints
-
 
 -- Fuzzy related definitions
 
@@ -515,18 +519,50 @@ revise0 r x2 (ch, h, x1) (d1, d2) = (ch', h', x1') where
   nd = arcCons r x1 x2 d1 d2
   h' = nd ?| h
   (ch', x1') =
-    if nd /= mu x1 d1
-    then (True, update x1 d1 nd)
+    if nd /= Fuzzy.mu x1 d1
+    then (True, Fuzzy.update x1 d1 nd)
     else (ch,   x1)
 
 foldArc :: (Fuzzy (s a g), FSet s, Ord a, Ord b, Grade g) =>
            (c -> (a, b) -> c) -> c -> s a g -> s b g -> c
-foldArc f c x1 x2 = foldl' g c (support x1) where
-  g c' d1 = foldl' (\c'' d2 -> f c'' (d1, d2)) c' (support x2)
+foldArc f c x1 x2 = foldl' g c (Fuzzy.support x1) where
+  g c' d1 = foldl' (\c'' d2 -> f c'' (d1, d2)) c' (Fuzzy.support x2)
 
 -- | Degree of consistency
 arcCons :: (Fuzzy (r (a, b) g), FSet r,
             Fuzzy (s a g), Fuzzy (s b g), FSet s,
             Ord a, Ord b, Grade g) =>
            r (a, b) g -> s a g -> s b g -> a -> b -> g
-arcCons r x1 x2 d1 d2 = mu x1 d1 ?& mu r (d1, d2) ?& mu x2 d2
+arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
+
+-- Tests
+
+testFCSP = runFD' $ do
+  x <- newL [0..2]
+  y <- newL [2..4]
+  z <- newL [4..6]
+  x `fcIntEq` y
+  y `fcIntEq` z
+  labelT [x, y, z]
+
+fcIntEq :: Var s Int -> Var s Int -> FD s ()
+fcIntEq = add2 "fcIntEq" frIntEq
+
+frIntEq :: FR Int RGrade
+frIntEq (x, y) = fromRational g where
+  d = abs (x - y)
+  c = 10
+  r = toRational d / toRational c
+  g, minB, maxB :: Rational
+  minB = toRational (minBound :: RGrade)
+  maxB = toRational (maxBound :: RGrade)
+  g = if d < c then maxB - r else minB
+
+{-
+revise rIntEq (fromCoreList [1..3] :: FS Int RGrade) (fromCoreList [1..3]) maxBound
+expected: x1'=[1..3] (unchanged)
+actual  : x1'=[]
+-}
+rIntEq :: FR Int RGrade
+rIntEq (x, y) | x == y    = maxBound
+              | otherwise = minBound

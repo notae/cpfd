@@ -58,6 +58,8 @@ class FSet s where
   mu :: (Fuzzy (s a g), Ord a, Grade g) => s a g -> a -> g
   -- | A list of values from the domain for which membership is non-zero.
   support :: (Ord a, Grade g) => s a g -> [a]
+  size :: (Ord a, Grade g) => s a g -> Int
+  size = length . support
 
 class FSet s => FSetFromList s where
   fromList :: (Ord a, Grade g) => [(a, g)] -> s a g
