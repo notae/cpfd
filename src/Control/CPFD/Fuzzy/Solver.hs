@@ -12,9 +12,7 @@ module Control.CPFD.Fuzzy.Solver
          FD, FDState
        , runFD, runFD'
        -- * Variables and Domains
-       , FDValue
-       , Domain
-       , Var
+       , Domain, FDValue, Var
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newCL
@@ -24,21 +22,19 @@ module Control.CPFD.Fuzzy.Solver
        -- * Labelling
        , labelT, labelC
        -- * Optmization
-       , optimizeT, optimizeC
+       , optimizeT, optimizeC, BState
        -- * Fuzzy related (for experimental)
        , revise, arcCons
        ) where
 
 import           Control.Applicative   (Applicative, (<$>))
-import           Control.Monad         (foldM, forM, liftM, replicateM, unless,
-                                        when)
+import           Control.Monad         (foldM, forM, replicateM, unless, when)
 import           Control.Monad.ST.Lazy (ST, runST)
 import           Control.Monad.State   (StateT, evalStateT)
 import qualified Control.Monad.State   as State
 import           Control.Monad.Trans   (lift)
 import           Control.Monad.Writer  (WriterT, runWriterT)
 import qualified Control.Monad.Writer  as Writer
-import           Data.Foldable         (Foldable)
 import qualified Data.Foldable         as Foldable
 import           Data.List             (foldl')
 import           Data.Maybe            (fromMaybe, listToMaybe)
