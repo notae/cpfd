@@ -650,7 +650,7 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 {-|
 >>> runFD testFCSP
-([([0,2,4,6],4 % 5)],(Just [0,2,4,6],4 % 5,1 % 1))
+(Just [0,2,4,6],4 % 5,1 % 1)
 -}
 testFCSP = do
   x <- newL [0..2]
