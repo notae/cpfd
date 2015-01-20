@@ -12,7 +12,7 @@ module Control.CPFD.Fuzzy.Solver
          FD, FDState
        , runFD, runFD'
        -- * Variables and Domains
-       , Domain, FDValue, Var
+       , Grade, RGrade, Domain, FDValue, Var
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newCL
