@@ -8,9 +8,7 @@ Stability   : experimental
 Portability : POSIX
 -}
 
-{-# LANGUAGE ConstraintKinds      #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 module Data.Domain
        (
@@ -41,7 +39,6 @@ module Data.Domain
 
 import           Data.Set (Set)
 import qualified Data.Set as Set
-import qualified GHC.Exts as GHCExts
 import           Prelude  hiding (filter, map, null)
 
 -- | Type constraint for domain value
@@ -106,8 +103,3 @@ member = Set.member
 
 notMember :: Ord v => v -> Domain v -> Bool
 notMember = Set.notMember
-
-instance Ord a => GHCExts.IsList (Domain a) where
-  type Item (Domain a) = a
-  fromList = fromList
-  toList = toList
