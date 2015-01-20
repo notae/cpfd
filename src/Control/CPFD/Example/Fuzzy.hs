@@ -80,7 +80,7 @@ exFCSPCons = do
 
 {-|
 >>> runFD exFCSPBest
-(Just [3,3,1],7 % 10,1 % 1)
+(Just [3,3,1],7 % 10)
 
 @[3,3,1]@ is the best solution with satisfaction grade @7 % 10@.
 -}
@@ -88,7 +88,7 @@ exFCSPBest = exFCSPCons >>= optimizeT
 
 {-|
 >>> runFD exFCSPAll
-([[3,3,1]],7 % 10,1 % 1)
+([[3,3,1]],7 % 10)
 
 @[3,3,1]@ is the best solution with satisfaction grade @7 % 10@.
 -}

@@ -22,8 +22,8 @@ module Control.CPFD.Fuzzy.Solver
        -- * Labelling
        , labelT, labelC
        -- * Optmization
-       , optimizeT, optimizeC, BestSolution
-       , optimizeAllT, optimizeAllC, AllSolution
+       , optimizeT, optimizeC
+       , optimizeAllT, optimizeAllC
        -- * Fuzzy related (for experimental)
        , revise, arcCons
        ) where
@@ -417,25 +417,27 @@ labelC' c nvs =
         pop
         return (ss ++ s)
 
--- | Optimize variables specified in 'Traversable'.
-optimizeT :: (FDValue v, Traversable t) => t (Var s v) -> FD s (BestSolution (t v))
-optimizeT t = do
-  (_, best) <-
-    optimizeC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBestSolution
-  return best
-
--- | Optimize variables specified in 'Container'.
-optimizeC :: Container c c' => c (Var s) -> FD s (BestSolution c')
-optimizeC c = do
-  (_, best) <-
-    optimizeC' c (fromContainer NVar c) initBestSolution
-  return best
-
 type BestSolution a = (Maybe a, RGrade, RGrade)
 initBestSolution :: BestSolution a
 initBestSolution = (Nothing, minBound, maxBound)
 
-optimizeC' :: Container c c' => c (Var s) -> [NVar s] -> BestSolution c'
+-- | Optimize variables specified in 'Traversable'.
+optimizeT :: (FDValue v, Traversable t)
+          => t (Var s v) -> FD s (Maybe (t v), RGrade)
+optimizeT t = do
+  (_, (best, g, _)) <-
+    optimizeC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBestSolution
+  return (best, g)
+
+-- | Optimize variables specified in 'Container'.
+optimizeC :: Container c c' => c (Var s) -> FD s (Maybe c', RGrade)
+optimizeC c = do
+  (_, (best, g, _)) <-
+    optimizeC' c (fromContainer NVar c) initBestSolution
+  return (best, g)
+
+optimizeC' :: Container c c'
+           => c (Var s) -> [NVar s] -> BestSolution c'
            -> FD s ([(c', RGrade)], BestSolution c')
 optimizeC' c nvs b@(_, bInf, bSup) =
   case nvs of
@@ -462,25 +464,27 @@ optimizeC' c nvs b@(_, bInf, bSup) =
         pop
         return (ss ++ s, b2')
 
--- | Optimize variables specified in 'Traversable' and return all solutions.
-optimizeAllT :: (FDValue v, Traversable t) => t (Var s v) -> FD s (AllSolution (t v))
-optimizeAllT t = do
-  (_, allSol) <-
-    optimizeAllC' (CTraversable t) (Foldable.toList $ fmap NVar t) initAllSolution
-  return allSol
-
--- | Optimize variables specified in 'Container' and return all solutions.
-optimizeAllC :: Container c c' => c (Var s) -> FD s (AllSolution c')
-optimizeAllC c = do
-  (_, allSol) <-
-    optimizeAllC' c (fromContainer NVar c) initAllSolution
-  return allSol
-
 type AllSolution a = ([a], RGrade, RGrade)
 initAllSolution :: AllSolution a
 initAllSolution = ([], minBound, maxBound)
 
-optimizeAllC' :: Container c c' => c (Var s) -> [NVar s] -> AllSolution c'
+-- | Optimize variables specified in 'Traversable' and return all solutions.
+optimizeAllT :: (FDValue v, Traversable t)
+             => t (Var s v) -> FD s ([t v], RGrade)
+optimizeAllT t = do
+  (_, (allSol, g, _)) <-
+    optimizeAllC' (CTraversable t) (Foldable.toList $ fmap NVar t) initAllSolution
+  return (allSol, g)
+
+-- | Optimize variables specified in 'Container' and return all solutions.
+optimizeAllC :: Container c c' => c (Var s) -> FD s ([c'], RGrade)
+optimizeAllC c = do
+  (_, (allSol, g, _)) <-
+    optimizeAllC' c (fromContainer NVar c) initAllSolution
+  return (allSol, g)
+
+optimizeAllC' :: Container c c'
+              => c (Var s) -> [NVar s] -> AllSolution c'
               -> FD s ([(c', RGrade)], AllSolution c')
 optimizeAllC' c nvs b@(_, bInf, bSup) =
   case nvs of
@@ -650,7 +654,7 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 {-|
 >>> runFD testFCSP
-(Just [0,2,4,6],4 % 5,1 % 1)
+(Just [0,2,4,6],4 % 5)
 -}
 testFCSP = do
   x <- newL [0..2]
