@@ -23,6 +23,8 @@ module Control.CPFD.Fuzzy.Solver
        , add1, add2, addN
        -- * Labelling
        , labelT, labelC
+       -- * Optmization
+       , optimizeT, optimizeC
        -- * Fuzzy related (for experimental)
        , revise, arcCons
        ) where
@@ -392,20 +394,47 @@ pop = do
   mapM_ __pop vs
 
 -- | Label variables specified in Traversable.
-labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s ([(t v, RGrade)], BState (t v))
-labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBState
+labelT :: (FDValue v, Traversable t) => t (Var s v) -> FD s [(t v, RGrade)]
+labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
-labelC :: Container c c' => c (Var s) -> FD s ([(c', RGrade)], BState c')
-labelC c = labelC' c (fromContainer NVar c) initBState
+labelC :: Container c c' => c (Var s) -> FD s [(c', RGrade)]
+labelC c = labelC' c (fromContainer NVar c)
+
+labelC' :: Container c c' => c (Var s) -> [NVar s] -> FD s [(c', RGrade)]
+labelC' c nvs =
+  case nvs of
+    [] -> do
+      c' <- getCL c
+      g <- getConsDeg
+      let c'' = cdown head c'
+      return [(c'', g)]
+    _ -> do
+      (NVar v, nvss) <- deleteFindMin nvs
+      d <- getL v
+      flip (`foldM` []) d $ \ss i -> do
+        push
+        traceM' $ "labelC': " ++ show v ++ "=" ++ show i
+        setS v i
+        s <- labelC' c nvss
+        pop
+        return (ss ++ s)
+
+-- | Optimize variables specified in Traversable.
+optimizeT :: (FDValue v, Traversable t) => t (Var s v) -> FD s ([(t v, RGrade)], BState (t v))
+optimizeT t = optimizeC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBState
+
+-- | Optimize variables specified in Container.
+optimizeC :: Container c c' => c (Var s) -> FD s ([(c', RGrade)], BState c')
+optimizeC c = optimizeC' c (fromContainer NVar c) initBState
 
 type BState a = (Maybe a, RGrade, RGrade)
 initBState :: BState a
 initBState = (Nothing, minBound, maxBound)
 
-labelC' :: Container c c' => c (Var s) -> [NVar s] -> BState c'
+optimizeC' :: Container c c' => c (Var s) -> [NVar s] -> BState c'
            -> FD s ([(c', RGrade)], BState c')
-labelC' c nvs b@(_, bInf, bSup) =
+optimizeC' c nvs b@(_, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
@@ -425,7 +454,7 @@ labelC' c nvs b@(_, bInf, bSup) =
         g <- getConsDeg
 --         g <- return maxBound
         (s, b2') <- if g > bInf2
-                    then labelC' c nvss b2
+                    then optimizeC' c nvss b2
                     else return ([], b2)
         pop
         return (ss ++ s, b2')
@@ -571,7 +600,11 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 -- Tests
 
-testFCSP = runFD' $ do
+{-|
+>>> runFD testFCSP
+([([0,2,4,6],4 % 5)],(Just [0,2,4,6],4 % 5,1 % 1))
+-}
+testFCSP = do
   x <- newL [0..2]
   y <- newL [2..4]
   z <- newL [4..6]
@@ -579,7 +612,7 @@ testFCSP = runFD' $ do
   x `fcIntEq` y
   y `fcIntEq` z
   z `fcIntEq` w
-  labelT [x, y, z, w]
+  optimizeT [x, y, z, w]
 
 fcIntEq :: Var s Int -> Var s Int -> FD s ()
 fcIntEq = add2 "fcIntEq" frIntEq
