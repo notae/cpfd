@@ -454,7 +454,7 @@ optimizeC' c nvs b@(_, bInf, bSup) =
       d <- getL v
       flip (`foldM` ([], b)) d $ \(ss, b2@(_, bInf2, bSup2)) i -> do
         push
-        traceM' $ "labelC': " ++ show v ++ "=" ++ show i
+        traceM' $ "optimizeC': " ++ show v ++ "=" ++ show i
         setS v i
         g <- getConsDeg
 --         g <- return maxBound
@@ -486,14 +486,14 @@ optimizeAllC c = do
 optimizeAllC' :: Container c c'
               => c (Var s) -> [NVar s] -> AllSolution c'
               -> FD s ([(c', RGrade)], AllSolution c')
-optimizeAllC' c nvs b@(_, bInf, bSup) =
+optimizeAllC' c nvs b@(best, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
       g <- getConsDeg
       let c'' = cdown head c'
-      let (best', bInf', bSup') | g >  bInf = ([c''],  g, bSup)
-                                | g == bInf = (c'':[], g, bSup)
+      let (best', bInf', bSup') | g >  bInf = ([c''],    g,    bSup)
+                                | g == bInf = (c'':best, bInf, bSup)
                                 | otherwise = b
       return ([(c'', g)], (best', bInf', bSup'))
     _ -> do
@@ -501,7 +501,7 @@ optimizeAllC' c nvs b@(_, bInf, bSup) =
       d <- getL v
       flip (`foldM` ([], b)) d $ \(ss, b2@(_, bInf2, bSup2)) i -> do
         push
-        traceM' $ "labelC': " ++ show v ++ "=" ++ show i
+        traceM' $ "optimizeAllC': " ++ show v ++ "=" ++ show i
         setS v i
         g <- getConsDeg
 --         g <- return maxBound
@@ -653,9 +653,17 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 -- Tests
 
 {-|
->>> runFD testFCSP
+>>> runFD testFCSPBest
 (Just [0,2,4,6],4 % 5)
 -}
+testFCSPBest = testFCSP >>= optimizeT
+
+{-|
+>>> runFD testFCSPAll
+([[2,4,6,8],[2,4,6,7],[2,4,6,6],[2,4,5,7],[2,4,5,6],[2,4,4,6],[2,3,5,7],[2,3,5,6],[2,3,4,6],[2,2,4,6],[1,3,5,7],[1,3,5,6],[1,3,4,6],[1,2,4,6],[0,2,4,6]],4 % 5)
+-}
+testFCSPAll = testFCSP >>= optimizeAllT
+
 testFCSP = do
   x <- newL [0..2]
   y <- newL [2..4]
@@ -664,7 +672,7 @@ testFCSP = do
   x `fcIntEq` y
   y `fcIntEq` z
   z `fcIntEq` w
-  optimizeT [x, y, z, w]
+  return [x, y, z, w]
 
 fcIntEq :: Var s Int -> Var s Int -> FD s ()
 fcIntEq = add2 "fcIntEq" frIntEq
