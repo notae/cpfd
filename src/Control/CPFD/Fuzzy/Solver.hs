@@ -10,7 +10,7 @@ module Control.CPFD.Fuzzy.Solver
        (
        -- * Monads
          FD, FDState
-       , runFD, runFD'
+       , runFD, runFD', runFD''
        -- * Variables and Domains
        , Grade, RGrade, Domain, FDValue, Var
        , Container, ContainerMap (..), ContainerLift (..)
@@ -24,7 +24,7 @@ module Control.CPFD.Fuzzy.Solver
        -- * Optmization
        , optimizeT, optimizeC
        , optimizeAllT, optimizeAllC
-       -- * Fuzzy related (for experimental)
+       -- * (for debug)
        , revise, arcCons
        ) where
 
@@ -116,8 +116,12 @@ runFD :: (forall s. FD s a) -> a
 runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper False fd
 
 -- | Run FD monad with trace for debug
-runFD' :: (forall s. FD s a) -> (a, [String])
-runFD' fd = runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper True fd
+runFD' :: (forall s. FD s a) -> a
+runFD' fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper True fd
+
+-- | Run FD monad with trace for debug
+runFD'' :: (forall s. FD s a) -> (a, [String])
+runFD'' fd = runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper True fd
 
 -- | (for internal use)
 fdWrapper :: Bool -> FD s a -> FD s a
@@ -445,9 +449,10 @@ optimizeC' c nvs b@(_, bInf, bSup) =
       c' <- getCL c
       g <- getConsDeg
       let c'' = cdown head c'
-      let (best', bInf', bSup') = if g > bInf
-                                  then (Just c'', g, bSup)
-                                  else b
+      let (best', bInf', bSup') =
+            if g > bInf
+            then (Just c'', g, bSup)
+            else b
       return ([(c'', g)], (best', bInf', bSup'))
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
@@ -457,59 +462,68 @@ optimizeC' c nvs b@(_, bInf, bSup) =
         traceM' $ "optimizeC': " ++ show v ++ "=" ++ show i
         setS v i
         g <- getConsDeg
---         g <- return maxBound
-        (s, b2') <- if g > bInf2
-                    then optimizeC' c nvss b2
-                    else return ([], b2)
+        traceM' $ "optimizeC': g=" ++ show g
+        (s, b2') <- if g > bInf2 -- && bInf2 < bSup2
+                    then do
+                      traceM' $ "optimizeC': >" ++ show v ++ "=" ++ show i
+                      optimizeC' c nvss b2
+                    else do
+                      traceM' $ "optimizeC': skip"
+                      return ([], b2)
         pop
         return (ss ++ s, b2')
 
-type AllSolution a = ([a], RGrade, RGrade)
-initAllSolution :: AllSolution a
-initAllSolution = ([], minBound, maxBound)
+type AllState a = ([a], RGrade, RGrade)
+allState0 :: AllState a
+allState0 = ([], minBound, maxBound)
 
 -- | Optimize variables specified in 'Traversable' and return all solutions.
 optimizeAllT :: (FDValue v, Traversable t)
              => t (Var s v) -> FD s ([t v], RGrade)
 optimizeAllT t = do
-  (_, (allSol, g, _)) <-
-    optimizeAllC' (CTraversable t) (Foldable.toList $ fmap NVar t) initAllSolution
-  return (allSol, g)
+  (ss, bInf, _) <-
+    optimizeAllC' (CTraversable t) (Foldable.toList $ fmap NVar t) allState0
+  return (ss, bInf)
 
 -- | Optimize variables specified in 'Container' and return all solutions.
 optimizeAllC :: Container c c' => c (Var s) -> FD s ([c'], RGrade)
 optimizeAllC c = do
-  (_, (allSol, g, _)) <-
-    optimizeAllC' c (fromContainer NVar c) initAllSolution
-  return (allSol, g)
+  (ss, bInf, _) <-
+    optimizeAllC' c (fromContainer NVar c) allState0
+  return (ss, bInf)
 
 optimizeAllC' :: Container c c'
-              => c (Var s) -> [NVar s] -> AllSolution c'
-              -> FD s ([(c', RGrade)], AllSolution c')
+              => c (Var s) -> [NVar s] -> AllState c' -> FD s (AllState c')
 optimizeAllC' c nvs b@(best, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
       g <- getConsDeg
+      traceM' $ "optimizeC': g=" ++ show g
       let c'' = cdown head c'
-      let (best', bInf', bSup') | g >  bInf = ([c''],    g,    bSup)
-                                | g == bInf = (c'':best, bInf, bSup)
-                                | otherwise = b
-      return ([(c'', g)], (best', bInf', bSup'))
+      let (best', bInf', bSup')
+            | g >  bInf = ([c''],         g,    bSup)
+            | g == bInf = (best ++ [c''], bInf, bSup)
+            | otherwise = b
+      return (best', bInf', bSup')
     _ -> do
       (NVar v, nvss) <- deleteFindMin nvs
       d <- getL v
-      flip (`foldM` ([], b)) d $ \(ss, b2@(_, bInf2, bSup2)) i -> do
+      flip (`foldM` b) d $ \b2@(_, bInf2, bSup2) i -> do
         push
         traceM' $ "optimizeAllC': " ++ show v ++ "=" ++ show i
         setS v i
         g <- getConsDeg
---         g <- return maxBound
-        (s, b2') <- if g >= bInf2
-                    then optimizeAllC' c nvss b2
-                    else return ([], b2)
+        traceM' $ "optimizeAllC': g=" ++ show g
+        b2' <- if g >= bInf2
+               then do
+                 traceM' $ "optimizeAllC': >" ++ show v ++ "=" ++ show i
+                 optimizeAllC' c nvss b2
+               else do
+                 traceM' $ "optimizeAllC': skip"
+                 return b2
         pop
-        return (ss ++ s, b2')
+        return b2'
 
 -- | Degree of consistency
 getConsDeg :: FD s RGrade
@@ -652,6 +666,17 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 -- Tests
 
+test1 = do
+  v <- newL [1..3]
+  add1 "test1FR1" test1FR1 v
+  return [v]
+test1FR1 x = case x of 1         -> 0.2
+                       2         -> 0.8
+                       3         -> 0.5
+                       otherwise -> 0
+test1Best = test1 >>= optimizeT
+test1All  = test1 >>= optimizeAllT
+
 {-|
 >>> runFD testFCSPBest
 (Just [0,2,4,6],4 % 5)
@@ -660,7 +685,7 @@ testFCSPBest = testFCSP >>= optimizeT
 
 {-|
 >>> runFD testFCSPAll
-([[2,4,6,8],[2,4,6,7],[2,4,6,6],[2,4,5,7],[2,4,5,6],[2,4,4,6],[2,3,5,7],[2,3,5,6],[2,3,4,6],[2,2,4,6],[1,3,5,7],[1,3,5,6],[1,3,4,6],[1,2,4,6],[0,2,4,6]],4 % 5)
+([[0,2,4,6],[1,2,4,6],[1,3,4,6],[1,3,5,6],[1,3,5,7],[2,2,4,6],[2,3,4,6],[2,3,5,6],[2,3,5,7],[2,4,4,6],[2,4,5,6],[2,4,5,7],[2,4,6,6],[2,4,6,7],[2,4,6,8]],4 % 5)
 -}
 testFCSPAll = testFCSP >>= optimizeAllT
 
