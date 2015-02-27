@@ -15,6 +15,7 @@ import qualified Data.Traversable    as Traversable
 import Data.Domain (FDValue)
 
 class ContainerMap c where
+  cmap  :: (forall a. FDValue a => t a -> t' a) -> c t -> c t'
   cmapA :: Applicative f =>
            (forall a. FDValue a => t a -> f (t' a)) -> c t -> f (c t')
   cmapM :: Monad m =>
@@ -36,6 +37,7 @@ newtype CTraversable t' v t =
 
 instance (FDValue v, Traversable t') =>
          ContainerMap (CTraversable t' v) where
+  cmap f (CTraversable ts) = CTraversable $ fmap f ts
   cmapA f (CTraversable ts) = CTraversable <$> Traversable.traverse f ts
   fromContainer f (CTraversable ts) = Foldable.toList $ fmap f ts
 

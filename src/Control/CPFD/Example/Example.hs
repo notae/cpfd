@@ -243,6 +243,7 @@ newtype CPairList x y t =
 
 instance (FDValue x, FDValue y) =>
          ContainerMap (CPairList x y) where
+  cmap f (CPairList ps) = CPairList $ fmap (\(x, y) -> (f x, f y)) ps
   cmapA f (CPairList ps) =
     CPairList <$> traverse (\(tx, ty) -> (,) <$> f tx <*> f ty) ps
   fromContainer f (CPairList ps) = concatMap (\(x, y) -> [f x, f y]) ps

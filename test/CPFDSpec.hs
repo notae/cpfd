@@ -10,6 +10,7 @@ import Test.QuickCheck       hiding ((.&.))
 import           Control.CPFD
 import qualified Data.Domain  as Domain
 import           Data.List    (nub, sort)
+import           Data.Maybe   (listToMaybe)
 
 instance (Arbitrary a, Ord a) => Arbitrary (Domain a) where
   arbitrary = Domain.fromList <$> arbitrary
@@ -30,6 +31,11 @@ spec = do
     let c = [123::Int, 456]
     let cList  = CTraversable [[123::Int], [456]]
     it "from []" $ cdown head cList `shouldBe` c
+
+  describe "CTraversable#cmap" $ do
+    let cList' = CTraversable [Just (123::Int), Just 456]
+    let cList  = CTraversable [[123::Int], [456]]
+    it "map [] to Maybe" $ cmap listToMaybe cList `shouldBe` cList'
 
   describe "runFD" $ do
     it "empty monad" $
