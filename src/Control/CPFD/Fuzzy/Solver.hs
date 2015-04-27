@@ -107,9 +107,10 @@ data FDState s =
   { varList   :: VarList s
   , lastVarId :: STRef s Int
   , propQueue :: STRef s (Queue (Propagator s))
-  , propStack :: STRef s [String]
+  , propStack :: STRef s [String]               -- | for trace of backtracking
   , fdCons    :: STRef s [Constraint s]
-  , traceFlag :: Bool }
+  , traceFlag :: Bool                           -- | switch for all the traces
+  }
 
 -- | Run FD monad
 runFD :: (forall s. FD s a) -> a
@@ -142,7 +143,7 @@ fdWrapper tf fd = do
   traceFD "Terminated."
   return a
 
--- | Propagate a domain changing to other domains.
+-- | Propagate a domain changing to others.
 data VarPropagator s =
   VarPropagator
   { vpName   :: String
@@ -150,7 +151,7 @@ data VarPropagator s =
   , vpAction :: FD s () }
   deriving (Show)
 
--- | Propagate the specified domain changing to other domains.
+-- | Queue elements for propagating the specified domain changing to others.
 data Propagator s =
   Propagator
   { propVar  :: NVar s
