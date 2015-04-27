@@ -45,7 +45,7 @@ import           Data.Traversable      (Traversable)
 import qualified Data.Traversable      as Traversable
 import           Debug.Trace           (traceM)
 
--- import Control.Lens
+import Control.Lens
 
 import           Control.CPFD.Internal.Queue (Queue)
 import qualified Control.CPFD.Internal.Queue as Queue
@@ -256,8 +256,8 @@ get v = do
   readSTRef (varDomain v)
 
 -- | Set domain of the variable and invoke propagators.
-set :: FDValue v => Var s v -> Domain v -> FD s ()
-set v d = do
+setV :: FDValue v => Var s v -> Domain v -> FD s ()
+setV v d = do
   writeSTRef (varDomain v) d
   p <- readSTRef (varProp v)
   enqProp v p
@@ -362,11 +362,11 @@ getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
 setS :: FDValue v => Var s v -> v -> FD s ()
-setS v val = set v (Fuzzy.fromCoreList [val])
+setS v val = setV v (Fuzzy.fromCoreList [val])
 
 -- | Same as 'set' except to take a list as domain.
 setL :: FDValue v => Var s v -> [v] -> FD s ()
-setL v d = set v (Fuzzy.fromCoreList d)
+setL v d = setV v (Fuzzy.fromCoreList d)
 
 -- Labeling
 
@@ -607,7 +607,7 @@ arcProp r v1 v2 = do
   let (sup', changed, x1') = revise r x1 x2 sup
   -- setSup sup'
   when changed $ do
-    set v1 x1'
+    setV v1 x1'
     return ()
 
 addN :: FDValue v => String -> FRN v RGrade -> [Var s v] -> FD s ()
