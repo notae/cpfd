@@ -107,9 +107,9 @@ data FDState s =
   { varList   :: VarList s
   , lastVarId :: STRef s Int
   , propQueue :: STRef s (Queue (Propagator s))
-  , propStack :: STRef s [String]               -- | for trace of backtracking
+  , propStack :: STRef s [String]               -- ^ for trace of backtracking
   , fdCons    :: STRef s [Constraint s]
-  , traceFlag :: Bool                           -- | switch for all the traces
+  , traceFlag :: Bool                           -- ^ switch for all the traces
   }
 
 -- | Run FD monad
