@@ -61,6 +61,7 @@ library
                      , Control.CPFD.Fuzzy
                      , Control.CPFD.Fuzzy.Primitives
                      , Control.CPFD.Fuzzy.Solver
+                     , Control.CPFD.Fuzzy.Solver2
                      , Data.Container
                      , Data.Domain
                      , Data.Fuzzy
@@ -75,6 +76,7 @@ library
   build-depends:       base >=4.7 && <4.8
                      , containers >=0.5 && <0.6
                      , mtl >=2.1 && <2.2
+                     , lens >=4.7 && <4.8
 
   -- Directories containing source files.
   hs-source-dirs:      src
