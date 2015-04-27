@@ -5,6 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE TemplateHaskell            #-}
 
 module Control.CPFD.Fuzzy.Solver2
        (
@@ -114,6 +115,64 @@ data FDState s =
   , traceFlag :: Bool                           -- ^ switch for all the traces
   }
 
+-- | Variable list
+type VarList s = STRef s [NVar s]
+
+-- | (for internal use in variable list)
+data NVar s = forall v. FDValue v => NVar (Var s v)
+
+instance Show (NVar s) where
+  show = showNVar'
+
+-- | (for debug)
+showNVar :: NVar s -> FD s String
+showNVar (NVar v) = do
+  d <- readSTRef (varDomain v)
+  s <- readSTRef (varStack v)
+  return $ show (varId v, d, s)
+
+-- | (for debug)
+showNVar' :: NVar s -> String
+showNVar' (NVar v) = "_" ++ show (varId v)
+
+-- | Finite domain variable
+data Var s v =
+  Var
+  { varId     :: Int
+  , varDomain :: STRef s (Domain v)
+  , varStack  :: STRef s [Domain v]
+  , varProp   :: STRef s [VarPropagator s] }
+
+type Domain v = FS v RGrade
+type FDValue v = Fuzzy.FValue v
+
+instance Show (Var s v) where
+  show v = "_" ++ show (varId v)
+
+-- | Propagate a domain changing to others.
+data VarPropagator s =
+  VarPropagator
+  { vpName   :: String
+  , vpVars   :: [NVar s]
+  , vpAction :: FD s () }
+  deriving (Show)
+
+-- | Queue elements for propagating the specified domain changing to others.
+data Propagator s =
+  Propagator
+  { propVar  :: NVar s
+  , propProp :: VarPropagator s }
+  deriving (Show)
+
+data Constraint s =
+  Constraint
+  { consName  :: String        -- ^ for debug
+  , consVars  :: [NVar s]      -- ^ for debug
+  , consGrade :: FD s RGrade
+  } deriving (Show)
+
+makeLenses ''FDState
+
 -- | Run FD monad
 runFD :: (forall s. FD s a) -> a
 runFD fd = fst $ runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper False fd
@@ -145,44 +204,6 @@ fdWrapper tf fd = do
   traceFD "Terminated."
   return a
 
--- | Propagate a domain changing to others.
-data VarPropagator s =
-  VarPropagator
-  { vpName   :: String
-  , vpVars   :: [NVar s]
-  , vpAction :: FD s () }
-  deriving (Show)
-
--- | Queue elements for propagating the specified domain changing to others.
-data Propagator s =
-  Propagator
-  { propVar  :: NVar s
-  , propProp :: VarPropagator s }
-  deriving (Show)
-
--- | Finite domain variable
-data Var s v =
-  Var
-  { varId     :: Int
-  , varDomain :: STRef s (Domain v)
-  , varStack  :: STRef s [Domain v]
-  , varProp   :: STRef s [VarPropagator s] }
-
-type Domain v = FS v RGrade
-type FDValue v = Fuzzy.FValue v
-
-instance Show (Var s v) where
-  show v = "_" ++ show (varId v)
-
--- | (for internal use in variable list)
-data NVar s = forall v. FDValue v => NVar (Var s v)
-
-instance Show (NVar s) where
-  show = showNVar'
-
--- | Variable list
-type VarList s = STRef s [NVar s]
-
 -- | Create an empty variable list.
 newVarList :: FD s (VarList s)
 newVarList = newSTRef []
@@ -193,28 +214,10 @@ getVarList = do
   readSTRef vl
 
 -- | (for debug)
-showNVar :: NVar s -> FD s String
-showNVar (NVar v) = do
-  d <- readSTRef (varDomain v)
-  s <- readSTRef (varStack v)
-  return $ show (varId v, d, s)
-
--- | (for debug)
-showNVar' :: NVar s -> String
-showNVar' (NVar v) = "_" ++ show (varId v)
-
--- | (for debug)
 traceM' :: String -> FD s ()
 traceM' s = do
   f <- gets traceFlag
   when f $ traceM s
-
-data Constraint s =
-  Constraint
-  { consName  :: String        -- ^ for debug
-  , consVars  :: [NVar s]      -- ^ for debug
-  , consGrade :: FD s RGrade
-  } deriving (Show)
 
 getCons :: FD s [Constraint s]
 getCons = do
