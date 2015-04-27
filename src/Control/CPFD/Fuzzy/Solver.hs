@@ -209,8 +209,8 @@ traceM' s = do
 
 data Constraint s =
   Constraint
-  { consName  :: String        -- | for debug
-  , consVars  :: [NVar s]      -- | for debug
+  { consName  :: String        -- ^ for debug
+  , consVars  :: [NVar s]      -- ^ for debug
   , consGrade :: FD s RGrade
   } deriving (Show)
 
