@@ -7,7 +7,10 @@ import Test.Hspec
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck       hiding ((.&.))
 
-import Control.Applicative ((<$>))
+import           Control.Applicative ((<$>))
+import           Data.Foldable       (Foldable)
+import qualified Data.Foldable       as Foldable
+
 import Data.Fuzzy
 
 spec :: Spec
@@ -40,12 +43,20 @@ gradeSpec = do
       (fuzzyAndAssocProp :: RGrade -> RGrade -> RGrade -> Bool)
     prop "or-assoc"
       (fuzzyOrAssocProp :: RGrade -> RGrade -> RGrade -> Bool)
+    prop "and-left-id"
+      (fuzzyAndLeftIdProp :: RGrade -> Bool)
+    prop "and-right-id"
+      (fuzzyAndRightIdProp :: RGrade -> Bool)
+    prop "or-left-id"
+      (fuzzyOrLeftIdProp :: RGrade -> Bool)
+    prop "or-right-id"
+      (fuzzyOrRightIdProp :: RGrade -> Bool)
     prop "not-not"
       (fuzzyNotProp :: RGrade -> Bool)
---     prop "and-left-id"
---       (gradeAndLeftIdProp :: RGrade -> Bool)
---     prop "and-right-id"
---       (gradeAndRightIdProp :: RGrade -> Bool)
+    prop "fand-null"
+      (gradeAndNullProp ([] :: [RGrade]) :: Bool)
+    prop "for-null"
+      (gradeOrNullProp ([] :: [RGrade]) :: Bool)
 
 type MFS = Map Int RGrade
 type FS = Membership Int RGrade
@@ -106,8 +117,20 @@ fuzzyOrAssocProp x y z = ((x ?| y) ?| z) == (x ?| (y ?| z))
 fuzzyNotProp :: (Fuzzy a, Eq a) => a -> Bool
 fuzzyNotProp x = x == fnot (fnot x)
 
-gradeAndLeftIdProp :: Grade g => g -> Bool
-gradeAndLeftIdProp x = x == (maxBound ?& x)
+fuzzyAndLeftIdProp :: Grade g => g -> Bool
+fuzzyAndLeftIdProp x = x == (maxBound ?& x)
 
-gradeAndRightIdProp :: Grade g => g -> Bool
-gradeAndRightIdProp x = x == (x ?& maxBound)
+fuzzyAndRightIdProp :: Grade g => g -> Bool
+fuzzyAndRightIdProp x = x == (x ?& maxBound)
+
+fuzzyOrLeftIdProp :: Grade g => g -> Bool
+fuzzyOrLeftIdProp x = x == (minBound ?| x)
+
+fuzzyOrRightIdProp :: Grade g => g -> Bool
+fuzzyOrRightIdProp x = x == (x ?| minBound)
+
+gradeAndNullProp :: (Foldable f, Grade g) => f g -> Bool
+gradeAndNullProp f = length (Foldable.toList f) == 0 && fand f == maxBound
+
+gradeOrNullProp :: (Foldable f, Grade g) => f g -> Bool
+gradeOrNullProp f = length (Foldable.toList f) == 0 && for f == minBound

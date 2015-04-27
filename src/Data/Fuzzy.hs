@@ -9,7 +9,7 @@ module Data.Fuzzy
        (
        -- * Basic Types
          Fuzzy (..)
-       , FValue, Grade
+       , FValue, Grade, fand, for
        , Membership
        -- * Fuzzy Set Types
        , FSet (..)
@@ -28,6 +28,7 @@ module Data.Fuzzy
        ) where
 
 import           Control.Arrow       (first)
+import           Data.Foldable       (Foldable, foldl')
 import qualified Data.List           as List
 import           Data.Map            (Map)
 import qualified Data.Map            as Map
@@ -50,8 +51,16 @@ class Fuzzy a where
 type FValue v = (Ord v, Show v)
 
 -- | Fuzzy grade
--- (TBD: semiring ?)
+-- (TBD: to be generalized on semiring ?)
 class (Fuzzy g, Ord g, Enum g, Bounded g, Fractional g, Show g) => Grade g
+
+-- | Folds grades with '?&'
+fand :: (Foldable f, Grade g) => f g -> g
+fand = foldl' (?&) maxBound
+
+-- | Folds grades with '?|'
+for :: (Foldable f, Grade g) => f g -> g
+for = foldl' (?|) minBound
 
 class FSet s where
   -- | A membership function.
