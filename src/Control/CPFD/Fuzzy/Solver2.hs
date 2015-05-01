@@ -65,6 +65,13 @@ newtype FD s a =
 instance Show (FD s a) where
   show _ = "<FD>"
 
+use' :: Getting a (FDState s0) a -> FD s0 a
+use' = FD . use
+
+(%$) :: Profunctor p
+     => Setting p (FDState s) (FDState s) a b -> p a b -> FD s ()
+l %$ f = FD $ l %= f
+
 -- | (for internal use)
 liftST :: ST s a -> FD s a
 liftST = FD . lift . lift
@@ -107,12 +114,12 @@ traceFD s = liftWriter $ Writer.tell [s]
 -- | (for internal use)
 data FDState s =
   FDState
-  { varList   :: VarList s
-  , lastVarId :: STRef s Int
-  , propQueue :: STRef s (Queue (Propagator s))
-  , propStack :: STRef s [String]               -- ^ for trace of backtracking
-  , fdCons    :: STRef s [Constraint s]
-  , traceFlag :: Bool                           -- ^ switch for all the traces
+  { _varList   :: VarList s
+  , _lastVarId :: STRef s Int
+  , _propQueue :: STRef s (Queue (Propagator s))
+  , _propStack :: STRef s [String]               -- ^ for trace of backtracking
+  , _fdCons    :: STRef s [Constraint s]
+  , _traceFlag :: Bool                           -- ^ switch for all the traces
   }
 
 -- | Variable list
@@ -193,12 +200,12 @@ fdWrapper tf fd = do
   rpq <- newSTRef Queue.empty
   rst <- newSTRef []
   rc  <- newSTRef []
-  put FDState { varList = vl
-              , lastVarId = rvi
-              , propQueue = rpq
-              , propStack = rst
-              , fdCons    = rc
-              , traceFlag = tf }
+  put FDState { _varList = vl
+              , _lastVarId = rvi
+              , _propQueue = rpq
+              , _propStack = rst
+              , _fdCons    = rc
+              , _traceFlag = tf }
   traceFD "Initialized."
   a <- fd
   traceFD "Terminated."
@@ -210,23 +217,23 @@ newVarList = newSTRef []
 
 getVarList :: FD s [NVar s]
 getVarList = do
-  vl <- gets varList
+  vl <- use' varList
   readSTRef vl
 
 -- | (for debug)
 traceM' :: String -> FD s ()
 traceM' s = do
-  f <- gets traceFlag
+  f <- use' traceFlag
   when f $ traceM s
 
 getCons :: FD s [Constraint s]
 getCons = do
-  rc <- gets fdCons
+  rc <- use' fdCons
   readSTRef rc
 
 addCons :: Constraint s -> FD s ()
 addCons c = do
-  rc <- gets fdCons
+  rc <- use' fdCons
   modifySTRef rc $ \cs -> c : cs
 
 -- Primitives for variable domain
@@ -234,7 +241,7 @@ addCons c = do
 -- | Create a new variable with domain.
 new :: FDValue v => Domain v -> FD s (Var s v)
 new d = do
-  vl <- gets varList
+  vl <- use' varList
   vi <- newVarId
   vd <- newSTRef d
   vs <- newSTRef []
@@ -246,7 +253,7 @@ new d = do
 -- | (for internal)
 newVarId :: FD s Int
 newVarId = do
-  rvi <- gets lastVarId
+  rvi <- use' lastVarId
   vi <- readSTRef rvi
   let vi' = vi + 1
   writeSTRef rvi vi'
@@ -268,7 +275,7 @@ setV v d = do
 -- | (for debug)
 getPropQueue :: FD s [String]
 getPropQueue = do
-  rpq <- gets propQueue
+  rpq <- use' propQueue
   pq <- readSTRef rpq
   return $ map (vpName . propProp) $ Queue.toList pq
 
@@ -276,7 +283,7 @@ getPropQueue = do
 enqProp :: FDValue v => Var s v -> [VarPropagator s] -> FD s ()
 enqProp v = mapM_ enq where
   enq vp = do
-    rpq <- gets propQueue
+    rpq <- use' propQueue
     let nv = NVar v
     let p = Propagator { propVar = nv, propProp = vp }
     modifySTRef rpq $ \pq -> Queue.enq p pq
@@ -285,7 +292,7 @@ enqProp v = mapM_ enq where
 -- | (for internal)
 execProp :: FD s ()
 execProp = do
-  rpq <- gets propQueue
+  rpq <- use' propQueue
   q <- readSTRef rpq
   unless (Queue.null q) $ do
     let (p, q') = Queue.deq q
@@ -300,19 +307,19 @@ execProp = do
 -- | (for debug)
 getPropStack :: FD s [String]
 getPropStack = do
-  rst <- gets propStack
+  rst <- use' propStack
   readSTRef rst
 
 -- | (for debug)
 pushPropStack :: String -> FD s ()
 pushPropStack n = do
-  rst <- gets propStack
+  rst <- use' propStack
   modifySTRef rst $ \st -> n:st
 
 -- | (for debug)
 popPropStack :: FD s ()
 popPropStack = do
-  rst <- gets propStack
+  rst <- use' propStack
   modifySTRef rst $ \(_:st) -> st
 
 -- Utilities for variable domain
