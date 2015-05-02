@@ -77,6 +77,7 @@ library
                      , containers >=0.5 && <0.6
                      , mtl >=2.1 && <2.2
                      , lens >=4.7 && <4.8
+                     , lens-action >=0.1 && <0.2
 
   -- Directories containing source files.
   hs-source-dirs:      src
