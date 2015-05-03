@@ -34,9 +34,7 @@ import Control.Applicative    (Applicative, (<$>))
 import Control.Monad          (foldM, forM, replicateM, unless, when)
 import Control.Monad.RWS.Lazy (RWST, runRWST)
 import Control.Monad.ST.Lazy  (ST, runST)
-import Control.Monad.State    (StateT, evalStateT)
 import Control.Monad.Trans    (lift)
-import Control.Monad.Writer   (WriterT, runWriterT)
 import Data.List              (foldl')
 import Data.Maybe             (fromMaybe, listToMaybe)
 import Data.STRef.Lazy        (STRef)
@@ -203,14 +201,6 @@ writeSTRef r a = liftST $ STRef.writeSTRef r a
 -- | (for internal use)
 modifySTRef :: STRef s a -> (a -> a) -> FD s ()
 modifySTRef r f = liftST $ STRef.modifySTRef r f
-
--- | (for internal use)
-put :: FDState -> FD s ()
-put = FD . State.put
-
--- | (for internal use)
-gets :: (FDState -> a) -> FD s a
-gets = FD . State.gets
 
 traceFD :: String -> FD s ()
 traceFD s = FD $ Writer.tell [s]
@@ -702,10 +692,11 @@ test1 = do
   v <- newL [1..3]
   add1 "test1FR1" test1FR1 v
   return [v]
-test1FR1 x = case x of 1         -> 0.2
-                       2         -> 0.8
-                       3         -> 0.5
-                       otherwise -> 0
+test1FR1 :: Int -> RGrade
+test1FR1 x = case x of 1 -> 0.2
+                       2 -> 0.8
+                       3 -> 0.5
+                       _ -> 0
 test1Best :: FDS s (Maybe [Int], RGrade)
 test1Best = test1 >>= optimizeT
 test1All :: FDS s ([[Int]], RGrade)
