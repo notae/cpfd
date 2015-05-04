@@ -17,7 +17,7 @@ module Control.CPFD.Fuzzy.Solver2
        , Grade, RGrade, Domain, FDValue, Var
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
-       , newV, newL, newN, newNL, newT, newTL, newCL
+       , new, newL, newN, newNL, newT, newTL, newCL
        -- * Constraint Store
        , add1, add2, addN
        -- * Labelling
@@ -268,8 +268,8 @@ addCons c = (?store ^. fdCons) ^! act (`modifySTRef` (c:))
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
-newV :: FDValue v => Domain v -> FDS s (Var s v)
-newV d = do
+new :: FDValue v => Domain v -> FDS s (Var s v)
+new d = do
   vi <- newVarId
   vd <- newSTRef d
   vs <- newSTRef []
@@ -345,11 +345,11 @@ popPropStack = (?store ^. propStack) ^! act (`modifySTRef` tail)
 
 -- | Same as 'new' except to take a list as domain.
 newL :: FDValue v => [v] -> FDS s (Var s v)
-newL d = newV (Fuzzy.fromCoreList d)
+newL d = new (Fuzzy.fromCoreList d)
 
 -- | Same as 'new' except to take a number of variables to create.
 newN :: FDValue v => Int -> Domain v -> FDS s [Var s v]
-newN n d = replicateM n (newV d)
+newN n d = replicateM n (new d)
 
 -- | Same as 'newN' except to take a list as domain.
 newNL :: FDValue v => Int -> [v] -> FDS s [Var s v]
@@ -357,7 +357,7 @@ newNL n d = replicateM n (newL d)
 
 -- | Same as 'new' except to take a Traversable containing domains.
 newT :: (FDValue v, Traversable t) => t (Domain v) -> FDS s (t (Var s v))
-newT = Traversable.mapM newV
+newT = Traversable.mapM new
 
 -- | Same as 'new' except to take a Traversable containing lists as domains.
 newTL :: (FDValue v, Traversable t) => t [v] -> FDS s (t (Var s v))
