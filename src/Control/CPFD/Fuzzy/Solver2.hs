@@ -51,9 +51,8 @@ import Control.Lens.Action
 
 import Control.CPFD.Internal.Queue (Queue)
 import Data.Container
-import Data.Fuzzy                  ((?&), (?|))
 import Data.Fuzzy                  (FR, FR1, FR2, FRN, FS, FSet, FSetUpdate,
-                                    FValue, Fuzzy, Grade, RGrade)
+                                    FValue, Fuzzy, Grade, RGrade, (?&), (?|))
 
 import qualified Control.CPFD.Internal.Queue as Queue
 import qualified Data.Fuzzy                  as Fuzzy
