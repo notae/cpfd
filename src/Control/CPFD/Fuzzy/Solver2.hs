@@ -11,14 +11,14 @@
 module Control.CPFD.Fuzzy.Solver2
        (
        -- * Monads
-         FD, FDState
+         FD, FDS, FDState
        , runFD, runFD'
        -- * Variables and Domains
        , Grade, RGrade, Domain, FDValue, Var
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
-       , new, newL, newN, newNL, newT, newTL, newCL
-       , set, setS, setL, get, getL
+       , newV, newL, newN, newNL, newT, newTL, newCL
+       , setV, setS, setL, getV, getL
        -- * Constraint Store
        , add1, add2, addN
        -- * Labelling
@@ -86,9 +86,11 @@ data FDStore s =
   FDStore
   { _varList   :: STRef s [NVar s]
   , _lastVarId :: STRef s Int
+  , _fdCons    :: STRef s [Constraint s]
+  , _varPopper :: STRef s [Popper s]
+  , _varPStack :: STRef s [[Popper s]]
   , _propQueue :: STRef s (Queue (Propagator s))
   , _propStack :: STRef s [String]               -- ^ for trace of backtracking
-  , _fdCons    :: STRef s [Constraint s]
   }
 
 type FDS s a = (?store::FDStore s) => FD s a
@@ -119,6 +121,8 @@ type FDValue v = Fuzzy.FValue v
 
 instance Show (Var s v) where
   show v = "_" ++ show (_varId v)
+
+type Popper s = FD s ()
 
 -- | Propagate a domain changing to others.
 data VarPropagator s =
@@ -224,15 +228,19 @@ fdWrapper :: FDS s a -> FD s a
 fdWrapper fd = do
   vl  <- newVarList
   rvi <- newSTRef 0
+  rc  <- newSTRef []
+  rvp <- newSTRef []
+  rvs <- newSTRef []
   rpq <- newSTRef Queue.empty
   rst <- newSTRef []
-  rc  <- newSTRef []
   let ?store =
         FDStore { _varList = vl
                 , _lastVarId = rvi
+                , _fdCons    = rc
+                , _varPopper = rvp
+                , _varPStack = rvs
                 , _propQueue = rpq
                 , _propStack = rst
-                , _fdCons    = rc
                 }
   traceFD "Initialized."
   a <- fd
@@ -261,8 +269,8 @@ addCons c = (?store ^. fdCons) ^! act (`modifySTRef` (c:))
 -- Primitives for variable domain
 
 -- | Create a new variable with domain.
-new :: FDValue v => Domain v -> FDS s (Var s v)
-new d = do
+newV :: FDValue v => Domain v -> FDS s (Var s v)
+newV d = do
   vi <- newVarId
   vd <- newSTRef d
   vs <- newSTRef []
@@ -278,14 +286,16 @@ newVarId = do
   (?store ^. lastVarId) ^! act readSTRef
 
 -- | Get domain of the variable.
-get :: Var s v -> FDS s (Domain v)
-get v = do
+getV :: Var s v -> FDS s (Domain v)
+getV v = do
   execProp
   (v ^. varDomain) ^! act readSTRef
 
 -- | Set domain of the variable and invoke propagators.
 setV :: FDValue v => Var s v -> Domain v -> FDS s ()
 setV v d = do
+  pushV v
+  (?store ^. varPopper) ^! act (`modifySTRef` (popV v:))
   (v ^. varDomain) ^! act (`writeSTRef` d)
   p <- (v ^. varProp) ^! act readSTRef
   enqProp v p
@@ -334,11 +344,11 @@ popPropStack = (?store ^. propStack) ^! act (`modifySTRef` tail)
 
 -- | Same as 'new' except to take a list as domain.
 newL :: FDValue v => [v] -> FDS s (Var s v)
-newL d = new (Fuzzy.fromCoreList d)
+newL d = newV (Fuzzy.fromCoreList d)
 
 -- | Same as 'new' except to take a number of variables to create.
 newN :: FDValue v => Int -> Domain v -> FDS s [Var s v]
-newN n d = replicateM n (new d)
+newN n d = replicateM n (newV d)
 
 -- | Same as 'newN' except to take a list as domain.
 newNL :: FDValue v => Int -> [v] -> FDS s [Var s v]
@@ -346,7 +356,7 @@ newNL n d = replicateM n (newL d)
 
 -- | Same as 'new' except to take a Traversable containing domains.
 newT :: (FDValue v, Traversable t) => t (Domain v) -> FDS s (t (Var s v))
-newT = Traversable.mapM new
+newT = Traversable.mapM newV
 
 -- | Same as 'new' except to take a Traversable containing lists as domains.
 newTL :: (FDValue v, Traversable t) => t [v] -> FDS s (t (Var s v))
@@ -364,11 +374,11 @@ newCL = cmapM newL
 
 -- | Same as 'get' except to return a list as domain.
 getL :: FDValue v => Var s v -> FDS s [v]
-getL v = Fuzzy.support <$> get v
+getL v = Fuzzy.support <$> getV v
 
 -- | Same as 'get' except to return a Maybe as domain.
 getM :: FDValue v => Var s v -> FDS s (Maybe v)
-getM v = (listToMaybe . Fuzzy.support) <$> get v
+getM v = (listToMaybe . Fuzzy.support) <$> getV v
 
 -- | Same as 'get' except to return a list as domain in Container.
 getCL :: ContainerMap c => c (Var s) -> FDS s (c [])
@@ -393,12 +403,21 @@ getStack :: Var s v -> FD s [Domain v]
 getStack v = (v ^. varStack) ^! act readSTRef
 
 __push :: NVar s -> FD s ()
-__push (NVar v) = do
+__push (NVar v) = pushV v
+
+pushV :: Var s a -> FD s ()
+pushV v = do
+  traceM' $ "{ -- pushV:" ++ show v
   d <- (v ^. varDomain) ^! act readSTRef
   (v ^. varStack) ^! act (`modifySTRef` (d:))
 
 __pop :: NVar s -> FD s ()
 __pop (NVar v) = do
+  popV v
+
+popV :: Var s a -> FD s ()
+popV v = do
+  traceM' $ "} -- popV:" ++ show v
   (d:ds) <- (v ^. varStack) ^! act readSTRef
   (v ^. varDomain) ^! act (`writeSTRef` d)
   (v ^. varStack) ^! act (`writeSTRef` ds)
@@ -406,14 +425,22 @@ __pop (NVar v) = do
 push :: FDS s ()
 push = do
   traceM' "{ -- push"
-  vs <- getVarList
-  mapM_ __push vs
+  -- vs <- getVarList
+  -- mapM_ __push vs
+  s <- (?store ^. varPopper) ^! act readSTRef
+  (?store ^. varPStack) ^! act (`modifySTRef` (s:))
+  (?store ^. varPopper) ^! act (`writeSTRef` [])
 
 pop :: FDS s ()
 pop = do
   traceM' "} -- pop"
-  vs <- getVarList
-  mapM_ __pop vs
+  -- vs <- getVarList
+  -- mapM_ __pop vs
+  s <- (?store ^. varPopper) ^! act readSTRef
+  _ <- sequence s
+  (st:ss) <- (?store ^. varPStack) ^! act readSTRef
+  (?store ^. varPopper) ^! act (`writeSTRef` st)
+  (?store ^. varPStack) ^! act (`writeSTRef` ss)
 
 -- | Label variables specified in Traversable.
 labelT :: (FDValue v, Traversable t) => t (Var s v) -> FDS s [(t v, RGrade)]
@@ -612,7 +639,7 @@ primCons2 r v1 v2 = do
 
 getS :: FDValue v => Var s v -> FDS s (Maybe v)
 getS v = do
-  x <- get v
+  x <- getV v
   return $ if Fuzzy.size x == 1 then Just (head (Fuzzy.support x)) else Nothing
 
 arcProp :: (FDValue v1, FDValue v2) =>
@@ -620,8 +647,8 @@ arcProp :: (FDValue v1, FDValue v2) =>
 arcProp r v1 v2 = do
   let sup = maxBound
   -- sup <- getSup
-  x1 <- get v1
-  x2 <- get v2
+  x1 <- getV v1
+  x2 <- getV v2
   let (sup', changed, x1') = revise r x1 x2 sup
   -- setSup sup'
   when changed $ do
