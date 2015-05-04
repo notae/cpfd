@@ -18,7 +18,6 @@ module Control.CPFD.Fuzzy.Solver2
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
        , newV, newL, newN, newNL, newT, newTL, newCL
-       , setV, setS, setL, getV, getL
        -- * Constraint Store
        , add1, add2, addN
        -- * Labelling
@@ -36,7 +35,7 @@ import Control.Monad.RWS.Lazy (RWST, runRWST)
 import Control.Monad.ST.Lazy  (ST, runST)
 import Control.Monad.Trans    (lift)
 import Data.List              (foldl')
-import Data.Maybe             (fromMaybe, listToMaybe)
+import Data.Maybe             (fromMaybe)
 import Data.STRef.Lazy        (STRef)
 import Data.Traversable       (Traversable)
 import Debug.Trace            (traceM)
@@ -94,9 +93,6 @@ data FDStore s =
   }
 
 type FDS s a = (?store::FDStore s) => FD s a
-
--- -- | Variable list
--- type VarList s = STRef s [NVar s]
 
 -- | (for internal use in variable list)
 data NVar s = forall v. FDValue v => NVar (Var s v)
@@ -217,12 +213,6 @@ runFD fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv False) FDState
 runFD' :: (forall s. FDS s a) -> (a, FDState, FDLog)
 runFD' fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv True) FDState
 
-{-
--- | Run FD monad with trace for debug
-runFD'' :: (forall s. FD s a) -> (a, [String])
-runFD'' fd = runST $ flip evalStateT undefined $ runWriterT $ unFD $ fdWrapper True fd
--}
-
 -- | (for internal use)
 fdWrapper :: FDS s a -> FD s a
 fdWrapper fd = do
@@ -251,6 +241,7 @@ fdWrapper fd = do
 newVarList :: FD s (STRef s [NVar s])
 newVarList = newSTRef []
 
+-- | (for debug)
 getVarList :: FDS s [NVar s]
 getVarList = (?store ^. varList) ^! act readSTRef
 
@@ -376,17 +367,9 @@ newCL = cmapM newL
 getL :: FDValue v => Var s v -> FDS s [v]
 getL v = Fuzzy.support <$> getV v
 
--- | Same as 'get' except to return a Maybe as domain.
-getM :: FDValue v => Var s v -> FDS s (Maybe v)
-getM v = (listToMaybe . Fuzzy.support) <$> getV v
-
 -- | Same as 'get' except to return a list as domain in Container.
 getCL :: ContainerMap c => c (Var s) -> FDS s (c [])
 getCL = cmapM getL
-
--- | Same as 'get' except to return a Maybe as domain in Container.
-getCM :: ContainerMap c => c (Var s) -> FDS s (c Maybe)
-getCM = cmapM getM
 
 -- | Set domain of the variable with singleton value and invoke propagators.
 setS :: FDValue v => Var s v -> v -> FDS s ()
@@ -402,18 +385,11 @@ setL v d = setV v (Fuzzy.fromCoreList d)
 getStack :: Var s v -> FD s [Domain v]
 getStack v = (v ^. varStack) ^! act readSTRef
 
-__push :: NVar s -> FD s ()
-__push (NVar v) = pushV v
-
 pushV :: Var s a -> FD s ()
 pushV v = do
   traceM' $ "{ -- pushV:" ++ show v
   d <- (v ^. varDomain) ^! act readSTRef
   (v ^. varStack) ^! act (`modifySTRef` (d:))
-
-__pop :: NVar s -> FD s ()
-__pop (NVar v) = do
-  popV v
 
 popV :: Var s a -> FD s ()
 popV v = do
@@ -425,8 +401,6 @@ popV v = do
 push :: FDS s ()
 push = do
   traceM' "{ -- push"
-  -- vs <- getVarList
-  -- mapM_ __push vs
   s <- (?store ^. varPopper) ^! act readSTRef
   (?store ^. varPStack) ^! act (`modifySTRef` (s:))
   (?store ^. varPopper) ^! act (`writeSTRef` [])
@@ -434,8 +408,6 @@ push = do
 pop :: FDS s ()
 pop = do
   traceM' "} -- pop"
-  -- vs <- getVarList
-  -- mapM_ __pop vs
   s <- (?store ^. varPopper) ^! act readSTRef
   _ <- sequence s
   (st:ss) <- (?store ^. varPStack) ^! act readSTRef
