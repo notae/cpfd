@@ -76,8 +76,17 @@ type FDLog = [String]
 
 data FDState =
   FDState
-  {
+  { _cnt        :: Int
+  , _cntVarGet  :: Int
+  , _cntVarSet  :: Int
+  , _cntConsDeg :: Int
   } deriving (Show)
+
+initState :: FDState
+initState = FDState 0 0 0 0
+
+incrCnt :: Enum a => Setting (->) FDState FDState a a -> FD s ()
+incrCnt l = FD $ l %= succ
 
 -- | (for internal use)
 data FDStore s =
@@ -206,11 +215,11 @@ traceFD s = FD $ Writer.tell [s]
 
 -- | Run FD monad
 runFD :: (forall s. FDS s a) -> (a, FDState, FDLog)
-runFD fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv False) FDState
+runFD fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv False) initState
 
 -- | Run FD monad with trace for debug
 runFD' :: (forall s. FDS s a) -> (a, FDState, FDLog)
-runFD' fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv True) FDState
+runFD' fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv True) initState
 
 -- | (for internal use)
 fdWrapper :: FDS s a -> FD s a
@@ -278,12 +287,14 @@ newVarId = do
 -- | Get domain of the variable.
 getV :: Var s v -> FDS s (Domain v)
 getV v = do
+  incrCnt cntVarGet
   execProp
   (v ^. varDomain) ^! act readSTRef
 
 -- | Set domain of the variable and invoke propagators.
 setV :: FDValue v => Var s v -> Domain v -> FDS s ()
 setV v d = do
+  incrCnt cntVarSet
   pushV v
   (?store ^. varPopper) ^! act (`modifySTRef` (popV v:))
   (v ^. varDomain) ^! act (`writeSTRef` d)
@@ -547,6 +558,7 @@ optimizeAllC' c nvs b@(best, bInf, bSup) =
 -- | Degree of consistency
 getConsDeg :: FDS s RGrade
 getConsDeg = do
+  incrCnt cntConsDeg
   cr <- getCons
   gs <- mapM _consGrade cr
   return $ foldl' (?&) maxBound gs
