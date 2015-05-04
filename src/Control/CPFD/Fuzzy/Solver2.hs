@@ -224,7 +224,7 @@ runFD' fd = runST $ runRWST (unFD $ fdWrapper fd) (FDEnv True) initState
 -- | (for internal use)
 fdWrapper :: FDS s a -> FD s a
 fdWrapper fd = do
-  vl  <- newVarList
+  vl  <- newSTRef []
   rvi <- newSTRef 0
   rc  <- newSTRef []
   rvp <- newSTRef []
@@ -244,10 +244,6 @@ fdWrapper fd = do
   a <- fd
   traceFD "Terminated."
   return a
-
--- | Create an empty variable list.
-newVarList :: FD s (STRef s [NVar s])
-newVarList = newSTRef []
 
 -- | (for debug)
 getVarList :: FDS s [NVar s]
