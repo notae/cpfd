@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Control.CPFD.Fuzzy.Solver2
        (
@@ -14,7 +15,7 @@ module Control.CPFD.Fuzzy.Solver2
          FD, FDS, FDState
        , runFD, runFD'
        -- * Variables and Domains
-       , Grade, RGrade, Domain, FDValue, Var
+       , Grade, RGrade, Domain, FDValue, Var, NVar
        , Container, ContainerMap (..), ContainerLift (..)
        , CTraversable (..)
        , new, newL, newN, newNL, newT, newTL, newCL
@@ -23,14 +24,16 @@ module Control.CPFD.Fuzzy.Solver2
        -- * Labelling
        , labelT, labelC
        -- * Optmization
-       , optimizeT, optimizeC
-       , optimizeAllT, optimizeAllC
+       -- , optimizeT, optimizeC
+       -- , optimizeAllT, optimizeAllC
+       , optimize
        -- * (for debug)
        , revise, arcCons
        ) where
 
-import Control.Applicative    (Applicative, (<$>))
+import Control.Applicative    (Applicative, (<$>), (<*>))
 import Control.Monad          (foldM, forM, replicateM, unless, when)
+import Control.Monad          (MonadPlus, msum)
 import Control.Monad.RWS.Lazy (RWST, runRWST)
 import Control.Monad.ST.Lazy  (ST, runST)
 import Control.Monad.Trans    (lift)
@@ -420,6 +423,13 @@ pop = do
   (?store ^. varPopper) ^! act (`writeSTRef` st)
   (?store ^. varPStack) ^! act (`writeSTRef` ss)
 
+local :: FDS s a -> FDS s a
+local action = do
+  push
+  a <- action
+  pop
+  return a
+
 -- | Label variables specified in Traversable.
 labelT :: (FDValue v, Traversable t) => t (Var s v) -> FDS s [(t v, RGrade)]
 labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
@@ -690,6 +700,38 @@ arcCons :: (Fuzzy (r (a, b) g), FSet r,
             Ord a, Ord b, Grade g) =>
            r (a, b) g -> s a g -> s b g -> a -> b -> g
 arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
+
+-- New API
+
+-- | Optimize given variables and return the captured solutions.
+optimize :: (MonadPlus m, Functor m) =>
+            [NVar s] -> FDS s (m a) -> FDS s (m (a, RGrade))
+optimize [] capture = do
+  s <- capture
+  g <- getConsDeg
+  return $ fmap (,g) s
+optimize (NVar v:vs) capture = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      optimize vs capture
+  return $ msum s
+
+testNewOpt :: FDS s [((Int, Bool), RGrade)]
+testNewOpt = do
+  x <- newL [1, 2, 3]
+  y <- newL [True, False]
+  add2 "parity" parity x y
+  let vs = [NVar x, NVar y]
+  let f = do
+        vx <- getL x
+        vy <- getL y
+        return $ (,) <$> vx <*> vy
+  optimize vs f
+
+parity :: FR2 Int Bool RGrade
+parity (i, b) = if (i `mod` 2 == 0) == b then 0.8 else 0.3
 
 -- Tests
 
