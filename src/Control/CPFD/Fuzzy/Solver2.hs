@@ -374,6 +374,10 @@ newC = cmapM new
 newCL :: ContainerMap c => c [] -> FDS s (c (Var s))
 newCL = cmapM newL
 
+-- | Same as 'new' except to take a stracture containing domains.
+newPL :: HasNT t t' [] (Var s) => t -> FDS s t'
+newPL = ntA newL
+
 -- | Same as 'get' except to return a list as domain.
 getL :: FDValue v => Var s v -> FDS s [v]
 getL v = Fuzzy.support <$> getV v
@@ -716,9 +720,9 @@ class Applicative f => HasLift b l f where
 --              (forall a. FDValue a => f a -> m (g a)) -> s -> m (g b)
 --   unlift'' f = unlift . ntA f
 
-class Applicative f => HasLift' b l f g where
+class HasLift' b l f g where
   unliftA :: (Applicative m, Applicative g) =>
-             (forall a. FDValue a => f a -> m (g a)) -> s -> m (g b)
+             (forall a. FDValue a => f a -> m (g a)) -> l -> m (g b)
 
 class HasNT s t f g where
   ntA :: Applicative m => (forall a. FDValue a => f a -> m (g a)) -> s -> m t
@@ -771,6 +775,11 @@ makeLenses ''PT
 
 instance Applicative f => HasLift (PT i b) (PT (f i) (f b)) f where
   unlift (PT i b) = PT <$> i <*> b
+
+instance (HasLift (PT i b) (PT (g i) (g b)) g,
+          HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g) =>
+         HasLift' (PT i b) (PT (f i) (f b)) f g where
+  unliftA f p = unlift <$> ntA f p
 
 instance (FDValue i, FDValue b) =>
          HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g where
@@ -879,13 +888,44 @@ optimize2' c (NVar v:vs) capture = do
 testNewOpt2 :: Stream m => FDS s (m (PT Int Bool, RGrade))
 testNewOpt2 = do
   let pd = PT [1::Int, 2, 3] [True, False]
-  pv <- ntA newL pd
+  pv <- newPL pd
   add2 "parity" parity (pv^.int) (pv^.bool)
   let f = do
         vx <- getL (pv^.int)  -- TBD: as IsList
         vy <- getL (pv^.bool)
         return $ PT <$> select vx <*> select vy
   optimize2 pv f
+
+-- | Optimize given variables and return the captured solutions.
+optimize3
+  :: (Stream m, ToList t (Var s), HasLift' b t (Var s) [])
+  => t                      -- ^ Wrapped varibales to label.
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize3 t = optimize3' t (toList NVar t)
+
+optimize3'
+  :: (Stream m, HasLift' b t (Var s) [])
+  => t                      -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize3' c [] = do
+  s <- unliftA getL c
+  g <- getConsDeg
+  return $ select $ fmap (,g) s
+optimize3' c (NVar v:vs) = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      optimize3' c vs
+  return $ msum s
+
+testNewOpt3 :: Stream m => FDS s (m (PT Int Bool, RGrade))
+testNewOpt3 = do
+  let pd = PT [1::Int, 2, 3] [True, False]
+  pv <- newPL pd
+  add2 "parity" parity (pv^.int) (pv^.bool)
+  optimize3 pv
 
 {-
 
