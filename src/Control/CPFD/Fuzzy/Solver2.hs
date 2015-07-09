@@ -5,9 +5,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImplicitParams             #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverlappingInstances       #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Control.CPFD.Fuzzy.Solver2
        (
@@ -26,19 +28,19 @@ module Control.CPFD.Fuzzy.Solver2
        -- * Optmization
        -- , optimizeT, optimizeC
        -- , optimizeAllT, optimizeAllC
-       , optimize
+       -- , optimizeBest
        -- * (for debug)
        , revise, arcCons
        ) where
 
 import Control.Applicative    (Applicative, (<$>), (<*>))
 import Control.Monad          (foldM, forM, replicateM, unless, when)
-import Control.Monad          (MonadPlus, msum)
+import Control.Monad          (MonadPlus, mplus, msum, mzero)
 import Control.Monad.RWS.Lazy (RWST, runRWST)
 import Control.Monad.ST.Lazy  (ST, runST)
 import Control.Monad.Trans    (lift)
 import Data.List              (foldl')
-import Data.Maybe             (fromMaybe)
+import Data.Maybe             (fromMaybe, listToMaybe, maybeToList)
 import Data.STRef.Lazy        (STRef)
 import Data.Traversable       (Traversable)
 import Debug.Trace            (traceM)
@@ -703,35 +705,223 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 -- New API
 
+-- Types
+
+class Applicative f => HasLift b l f where
+  unlift :: l -> f b
+
+-- class (Applicative f, HasNT s t g f, HasLift b t f) =>
+--       HasLift'' b s t f g where
+--   unlift'' :: (Applicative m, Applicative g) =>
+--              (forall a. FDValue a => f a -> m (g a)) -> s -> m (g b)
+--   unlift'' f = unlift . ntA f
+
+class Applicative f => HasLift' b l f g where
+  unliftA :: (Applicative m, Applicative g) =>
+             (forall a. FDValue a => f a -> m (g a)) -> s -> m (g b)
+
+class HasNT s t f g where
+  ntA :: Applicative m => (forall a. FDValue a => f a -> m (g a)) -> s -> m t
+  nt :: (forall a. FDValue a => f a -> g a) -> s -> t
+  nt f = runIdentity . ntA (Identity . f)
+
+class ToList t f where
+  toList :: (forall a. FDValue a => f a -> g) -> t -> [g]
+
+-- type FDPack b m l t f g = (HasLift b t m, HasNT l t f g, ToList t)
+
+-- Instances
+
+--   Traversable
+
+instance (Traversable t, Applicative f) => HasLift (t a) (t (f a)) f where
+  unlift t = traverse id t
+
+instance (Traversable t, FDValue a) => HasNT (t (f a)) (t (g a)) f g where
+  ntA f = traverse f
+
+instance (Traversable t, FDValue a) => ToList (t (f a)) f where
+  toList f t = fmap f (Foldable.toList t)
+
+--   Tuple
+
+instance Applicative f => HasLift (a, b) (f a, f b) f where
+  unlift (a, b) = (,) <$> a <*> b
+
+-- instance (Applicative f, HasLift (a, b) (g a, g b) g,
+--           HasNT (f a, f b) (g a, g b) f g) =>
+--          HasLift' (a, b) (f a, f b) f g where
+--   unliftA f p = (unlift :: (g a, g b) -> g (a, b)) <$> ntA f p
+
+instance (Applicative f, HasLift (a, b) ([a], [b]) [],
+          HasNT (f a, f b) ([a], [b]) f []) =>
+         HasLift' (a, b) (f a, f b) f [] where
+--   unliftA f p = (unlift :: ([a], [b]) -> [(a, b)]) <$> ntA f p
+
+instance (FDValue a, FDValue b) => HasNT (f a, f b) (g a, g b) f g where
+  ntA f (a, b) = (,) <$> f a <*> f b
+
+instance (FDValue a, FDValue b) => ToList (f a, f b) f where
+  toList f (a, b) = [f a, f b]
+
+--   User-defined type
+
+data PT i b = PT { _int :: i, _bool :: b } deriving (Show, Eq)
+makeLenses ''PT
+
+instance Applicative f => HasLift (PT i b) (PT (f i) (f b)) f where
+  unlift (PT i b) = PT <$> i <*> b
+
+instance (FDValue i, FDValue b) =>
+         HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g where
+  ntA f (PT i b) = PT <$> f i <*> f b
+
+instance (FDValue i, FDValue b) => ToList (PT (f i) (f b)) f where
+  toList f (PT i b) = [f i, f b]
+
+-- Examples
+
+pt1 :: PT [Int] [Bool]
+pt1 = PT [1, 2] [True, False]
+
+pt2 :: PT (Domain Int) (Domain Bool)
+pt2 = PT
+      (Fuzzy.fromList [(1, 0.7), (2, 0.3)])
+      (Fuzzy.fromList [(True, 0.4), (False, 0.6)])
+
+usecase1 :: PT (Maybe Int) (Maybe Bool)
+usecase1 = nt listToMaybe pt1
+
+usecase2 :: FDS s (PT (Var s Int) (Var s Bool))
+usecase2 = ntA newL pt1
+
+usecase3 :: FDS s [PT Int Bool]
+usecase3 = do
+  v <- ntA newL pt1
+  add2 "parity" parity (v^.int) (v^.bool)
+  d <- ntA getL v
+  return $ unlift (d :: PT [Int] [Bool])
+
+-- | Data stream
+type Stream m = (MonadPlus m, Applicative m)
+
+select :: Stream m => [a] -> m a
+select = foldr (\x m -> return x `mplus` m) mzero
+
 -- | Optimize given variables and return the captured solutions.
-optimize :: (MonadPlus m, Functor m) =>
-            [NVar s] -> FDS s (m a) -> FDS s (m (a, RGrade))
-optimize [] capture = do
+optimize1
+  :: Stream m
+  => [NVar s]               -- ^ Wrapped varibales to label.
+  -> FDS s (m a)            -- ^ Action to capture variable.
+  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize1 [] capture = do
   s <- capture
   g <- getConsDeg
   return $ fmap (,g) s
-optimize (NVar v:vs) capture = do
+optimize1 (NVar v:vs) capture = do
   d <- getL v
   s <- forM d $ \i -> do
     local $ do
       setS v i
-      optimize vs capture
+      optimize1 vs capture
   return $ msum s
 
-testNewOpt :: FDS s [((Int, Bool), RGrade)]
+{-|
+>>> (runFD testNewOpt ^. _1 :: [((Int, Bool), RGrade)]) & mapMOf_ each print
+((1,False),7 % 10)
+((1,True),3 % 10)
+((2,False),3 % 10)
+((2,True),7 % 10)
+((3,False),7 % 10)
+((3,True),3 % 10)
+-}
+testNewOpt :: Stream m => FDS s (m ((Int, Bool), RGrade))
 testNewOpt = do
   x <- newL [1, 2, 3]
   y <- newL [True, False]
   add2 "parity" parity x y
   let vs = [NVar x, NVar y]
   let f = do
-        vx <- getL x
+        vx <- getL x  -- TBD: as IsList
         vy <- getL y
-        return $ (,) <$> vx <*> vy
-  optimize vs f
+        return $ (,) <$> select vx <*> select vy
+  optimize1 vs f
 
 parity :: FR2 Int Bool RGrade
-parity (i, b) = if (i `mod` 2 == 0) == b then 0.8 else 0.3
+parity (i, b) = if (i `mod` 2 == 0) == b then 0.7 else 0.3
+
+-- | Optimize given variables and return the captured solutions.
+optimize2
+  :: (Stream m, ToList t (Var s))
+  => t                      -- ^ Wrapped varibales to label.
+  -> FDS s (m a)            -- ^ Action to capture variable.
+  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize2 t = optimize2' t (toList NVar t)
+
+optimize2'
+  :: (Stream m)
+  => t                      -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m a)            -- ^ Action to capture variable.
+  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize2' c [] capture = do
+  s <- capture
+  g <- getConsDeg
+  return $ fmap (,g) s
+optimize2' c (NVar v:vs) capture = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      optimize2' c vs capture
+  return $ msum s
+
+testNewOpt2 :: Stream m => FDS s (m (PT Int Bool, RGrade))
+testNewOpt2 = do
+  let pd = PT [1::Int, 2, 3] [True, False]
+  pv <- ntA newL pd
+  add2 "parity" parity (pv^.int) (pv^.bool)
+  let f = do
+        vx <- getL (pv^.int)  -- TBD: as IsList
+        vy <- getL (pv^.bool)
+        return $ PT <$> select vx <*> select vy
+  optimize2 pv f
+
+{-
+
+-- | Optimize given variables and return the captured solutions.
+optimize2
+  :: (Stream m, ToList t (Var s), HasLift' b t (Var s) [])
+  => t                      -- ^ Wrapped varibales to label.
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize2 t = optimize2' t (toList NVar t)
+
+optimize2'
+  :: (Stream m, HasLift' b t (Var s) [])
+  => t                      -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize2' c [] = do
+  s <- unliftA getL c
+  g <- getConsDeg
+  return $ select $ fmap (,g) s
+optimize2' c (NVar v:vs) = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      optimize2' c vs
+  return $ msum s
+
+testNewOpt2 :: Stream m => FDS s (m ((Int, Bool), RGrade))
+testNewOpt2 = do
+  let pd = ([1::Int, 2, 3], [True, False])
+  pv <- ntA newL pd
+  add2 "parity" parity (fst pv) (snd pv)
+--  optimize2 pv
+  return $ select []
+
+-}
 
 -- Tests
 
