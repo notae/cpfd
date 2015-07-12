@@ -90,7 +90,7 @@ data FDState =
 initState :: FDState
 initState = FDState 0 0 0 0
 
-incrCnt :: Enum a => Setting (->) FDState FDState a a -> FD s ()
+incrCnt :: Enum a => Setting' (->) FDState a -> FD s ()
 incrCnt l = FD $ l %= succ
 
 -- | (for internal use)
