@@ -779,7 +779,7 @@ instance Applicative f => HasLift (PT i b) (PT (f i) (f b)) f where
 instance (HasLift (PT i b) (PT (g i) (g b)) g,
           HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g) =>
          HasLift' (PT i b) (PT (f i) (f b)) f g where
-  unliftA f p = unlift <$> ntA f p
+  -- unliftA f p = unlift <$> ntA f p
 
 instance (FDValue i, FDValue b) =>
          HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g where
