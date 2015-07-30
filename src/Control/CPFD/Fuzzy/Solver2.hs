@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Control.CPFD.Fuzzy.Solver2
        (
@@ -764,6 +765,9 @@ class Applicative f => HasLift b l f where
 instance Applicative f => HasLift (a, b) (f a, f b) f where
   unlift (a, b) = (,) <$> a <*> b
 
+instance Applicative f => HasLift (a, b) (TupleV a b f) f where
+  unlift (TupleV (a, b)) = (,) <$> a <*> b
+
 -- to list
 
 class ToList t f where
@@ -798,13 +802,9 @@ usecase3 = do
   (TupleV d) <- gntA (TupleV v)
   return $ unlift (d :: ([Int], [Bool])) -- unlift from user code
 
--- testopt :: (Stream m, GNTLike t (Var s) [], HasLift b (t []) []) => t (Var s) -> FDS s (m b)
--- testopt l = do
---   d <- gntA l
---   return $ select $ unlift d
-
-type family FDCtx (f :: * -> *) (g :: * -> *) a :: Exts.Constraint
-type instance FDCtx (Var s) [] a = (FDValue a, ?store::FDStore s)
+testopt1 :: (Stream m, HasLift b (t []) []) => t [] -> FDS s (m b)
+testopt1 d = do
+  return $ select $ unlift d
 
 testopt' :: (Stream m, GNTLike t (Var s) []) => t (Var s) -> FDS s (m (t []))
 testopt' l = do
@@ -816,7 +816,21 @@ usecase4 = do
   (TupleV v) <- gntA (TupleV p1)
   add2 "parity" parity (v^._1) (v^._2)
   ds <- testopt' (TupleV v)
-  return $ concatMap (unlift . getTupleV) ds
+  return $ concatMap unlift ds
+
+testopt :: forall s m t b.
+           (Stream m, GNTLike t (Var s) [], HasLift b (t []) [])
+           => t (Var s) -> FDS s (m b)
+testopt l = do
+  d <- gntA l :: FDS s (t [])
+  let ds = unlift d
+  return $ select ds
+
+usecase5 :: FDS s [(Int, Bool)]
+usecase5 = do
+  (TupleV v) <- gntA (TupleV p1)
+  add2 "parity" parity (v^._1) (v^._2)
+  testopt (TupleV v)
 
 parity :: FR2 Int Bool RGrade
 parity (i, b) = if (i `mod` 2 == 0) == b then 0.7 else 0.3
