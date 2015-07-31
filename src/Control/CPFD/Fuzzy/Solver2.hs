@@ -30,11 +30,13 @@ module Control.CPFD.Fuzzy.Solver2
        -- * Constraint Store
        , add1, add2, addN
        -- * Labelling
-       , labelT, labelC
-       -- * Optmization
+       , labelAll, labelAllT
+       , label, labelT
+       -- -- * (Old) Optimization
        -- , optimizeT, optimizeC
        -- , optimizeAllT, optimizeAllC
-       -- , optimizeBest
+       -- * Optimization
+       , optimize, optimizeT
        -- * (for debug)
        , revise, arcCons
        ) where
@@ -448,15 +450,15 @@ local action = do
   return a
 
 -- | Label variables specified in Traversable.
-labelT :: (FDValue v, Traversable t) => t (Var s v) -> FDS s [(t v, RGrade)]
-labelT t = labelC' (CTraversable t) (Foldable.toList $ fmap NVar t)
+labelT_ :: (FDValue v, Traversable t) => t (Var s v) -> FDS s [(t v, RGrade)]
+labelT_ t = labelC'_ (CTraversable t) (Foldable.toList $ fmap NVar t)
 
 -- | Label variables specified in Container.
-labelC :: Container c c' => c (Var s) -> FDS s [(c', RGrade)]
-labelC c = labelC' c (fromContainer NVar c)
+labelC_ :: Container c c' => c (Var s) -> FDS s [(c', RGrade)]
+labelC_ c = labelC'_ c (fromContainer NVar c)
 
-labelC' :: Container c c' => c (Var s) -> [NVar s] -> FDS s [(c', RGrade)]
-labelC' c nvs =
+labelC'_ :: Container c c' => c (Var s) -> [NVar s] -> FDS s [(c', RGrade)]
+labelC'_ c nvs =
   case nvs of
     [] -> do
       c' <- getCL c
@@ -470,33 +472,33 @@ labelC' c nvs =
         push
         traceM' $ "labelC': " ++ show v ++ "=" ++ show i
         setS v i
-        s <- labelC' c nvss
+        s <- labelC'_ c nvss
         pop
         return (ss ++ s)
 
-type BestSolution a = (Maybe a, RGrade, RGrade)
-initBestSolution :: BestSolution a
-initBestSolution = (Nothing, minBound, maxBound)
+type BestSolution_ a = (Maybe a, RGrade, RGrade)
+initBestSolution_ :: BestSolution_ a
+initBestSolution_ = (Nothing, minBound, maxBound)
 
 -- | Optimize variables specified in 'Traversable'.
-optimizeT :: (FDValue v, Traversable t)
+optimizeT_ :: (FDValue v, Traversable t)
           => t (Var s v) -> FDS s (Maybe (t v), RGrade)
-optimizeT t = do
+optimizeT_ t = do
   (_, (best, g, _)) <-
-    optimizeC' (CTraversable t) (Foldable.toList $ fmap NVar t) initBestSolution
+    optimizeC'_ (CTraversable t) (Foldable.toList $ fmap NVar t) initBestSolution_
   return (best, g)
 
 -- | Optimize variables specified in 'Container'.
-optimizeC :: Container c c' => c (Var s) -> FDS s (Maybe c', RGrade)
-optimizeC c = do
+optimizeC_ :: Container c c' => c (Var s) -> FDS s (Maybe c', RGrade)
+optimizeC_ c = do
   (_, (best, g, _)) <-
-    optimizeC' c (fromContainer NVar c) initBestSolution
+    optimizeC'_ c (fromContainer NVar c) initBestSolution_
   return (best, g)
 
-optimizeC' :: Container c c'
-           => c (Var s) -> [NVar s] -> BestSolution c'
-           -> FDS s ([(c', RGrade)], BestSolution c')
-optimizeC' c nvs b@(_, bInf, bSup) =
+optimizeC'_ :: Container c c'
+           => c (Var s) -> [NVar s] -> BestSolution_ c'
+           -> FDS s ([(c', RGrade)], BestSolution_ c')
+optimizeC'_ c nvs b@(_, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
@@ -519,35 +521,35 @@ optimizeC' c nvs b@(_, bInf, bSup) =
         (s, b2') <- if g > bInf2 -- && bInf2 < bSup2
                     then do
                       traceM' $ "optimizeC': >" ++ show v ++ "=" ++ show i
-                      optimizeC' c nvss b2
+                      optimizeC'_ c nvss b2
                     else do
                       traceM' $ "optimizeC': skip"
                       return ([], b2)
         pop
         return (ss ++ s, b2')
 
-type AllState a = ([a], RGrade, RGrade)
-allState0 :: AllState a
-allState0 = ([], minBound, maxBound)
+type AllState_ a = ([a], RGrade, RGrade)
+allState0_ :: AllState_ a
+allState0_ = ([], minBound, maxBound)
 
 -- | Optimize variables specified in 'Traversable' and return all solutions.
-optimizeAllT :: (FDValue v, Traversable t)
+optimizeAllT_ :: (FDValue v, Traversable t)
              => t (Var s v) -> FDS s ([t v], RGrade)
-optimizeAllT t = do
+optimizeAllT_ t = do
   (ss, bInf, _) <-
-    optimizeAllC' (CTraversable t) (Foldable.toList $ fmap NVar t) allState0
+    optimizeAllC'_ (CTraversable t) (Foldable.toList $ fmap NVar t) allState0_
   return (ss, bInf)
 
 -- | Optimize variables specified in 'Container' and return all solutions.
-optimizeAllC :: Container c c' => c (Var s) -> FDS s ([c'], RGrade)
-optimizeAllC c = do
+optimizeAllC_ :: Container c c' => c (Var s) -> FDS s ([c'], RGrade)
+optimizeAllC_ c = do
   (ss, bInf, _) <-
-    optimizeAllC' c (fromContainer NVar c) allState0
+    optimizeAllC'_ c (fromContainer NVar c) allState0_
   return (ss, bInf)
 
-optimizeAllC' :: Container c c'
-              => c (Var s) -> [NVar s] -> AllState c' -> FDS s (AllState c')
-optimizeAllC' c nvs b@(best, bInf, bSup) =
+optimizeAllC'_ :: Container c c'
+              => c (Var s) -> [NVar s] -> AllState_ c' -> FDS s (AllState_ c')
+optimizeAllC'_ c nvs b@(best, bInf, bSup) =
   case nvs of
     [] -> do
       c' <- getCL c
@@ -571,7 +573,7 @@ optimizeAllC' c nvs b@(best, bInf, bSup) =
         b2' <- if g >= bInf2
                then do
                  traceM' $ "optimizeAllC': >" ++ show v ++ "=" ++ show i
-                 optimizeAllC' c nvss b2
+                 optimizeAllC'_ c nvss b2
                else do
                  traceM' $ "optimizeAllC': skip"
                  return b2
@@ -822,6 +824,123 @@ toNVarList :: (GNTLike t (Var s) (Const (NVar s)),
               => t (Var s) -> [NVar s]
 toNVarList = toList' getConst . runIdentity . gntA
 
+-- Label and Optimize
+
+-- | Optimize given variables and return the captured solutions.
+labelAll ::
+  (Stream m,
+   ToList' t (Const (NVar s)) (NVar s),
+   GNTLike t (Var s) (Const (NVar s)),
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => t (Var s)              -- ^ Wrapped varibales to label.
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+labelAll t = labelAll' t (toNVarList t)
+
+labelAll' ::
+  (Stream m,
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => t (Var s)              -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+labelAll' c [] = do
+  d <- gntA c
+  let s = unlift d
+  g <- getConsDeg
+  return $ select $ fmap (,g) s
+labelAll' c (NVar v:vs) = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      labelAll' c vs
+  return $ msum s
+
+labelAllT ::
+  (Stream m, Traversable t, FDValue a)
+  => t (Var s a)             -- ^ Wrapped varibales to label.
+  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
+labelAllT t = labelAll (TraversableV t)
+
+-- | Optimize given variables and return the captured solutions.
+label ::
+  (Stream m,
+   ToList' t (Const (NVar s)) (NVar s),
+   GNTLike t (Var s) (Const (NVar s)),
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => RGrade                 -- ^ Lower threashold of consitency grade.
+  -> t (Var s)              -- ^ Wrapped varibales to label.
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+label bInf t = label' bInf t (toNVarList t)
+
+label' ::
+  (Stream m,
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => RGrade                 -- ^ Lower threashold of consitency grade.
+  -> t (Var s)              -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+label' bInf c [] = do
+  d <- gntA c
+  let s = unlift d
+  g <- getConsDeg
+  return $ select $ fmap (,g) s
+label' bInf c (NVar v:vs) = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      label' bInf c vs
+  return $ msum s
+
+labelT ::
+  (Stream m, Traversable t, FDValue a)
+  => RGrade                  -- ^ Lower threashold of consitency grade.
+  -> t (Var s a)             -- ^ Wrapped varibales to label.
+  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
+labelT bInf t = label bInf (TraversableV t)
+
+-- | Optimize given variables and return the captured solutions.
+optimize ::
+  (Stream m,
+   ToList' t (Const (NVar s)) (NVar s),
+   GNTLike t (Var s) (Const (NVar s)),
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => t (Var s)              -- ^ Wrapped varibales to label.
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize t = optimize' minBound t (toNVarList t)
+
+optimize' ::
+  (Stream m,
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => RGrade                 -- ^ Current inferior bound
+  -> t (Var s)              -- ^ Wrapped varibales to label.
+  -> [NVar s]
+  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+optimize' bInf c [] = do
+  d <- gntA c
+  let s = unlift d
+  g <- getConsDeg
+  return $ select $ fmap (,g) s
+optimize' bInf c (NVar v:vs) = do
+  d <- getL v
+  s <- forM d $ \i -> do
+    local $ do
+      setS v i
+      optimize' bInf c vs
+  return $ msum s
+
+optimizeT ::
+  (Stream m, Traversable t, FDValue a)
+  => t (Var s a)             -- ^ Wrapped varibales to label.
+  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
+optimizeT t = optimize (TraversableV t)
+
 -- Examples
 
 p1 :: ([Int], [Bool])
@@ -889,53 +1008,19 @@ testToList' :: [Dynamic]
 testToList' = toList' getConst . runIdentity . gntA $ TupleV p1
 
 
--- | Optimize given variables and return the captured solutions.
-optimize2 ::
-  (Stream m,
-   ToList' t (Const (NVar s)) (NVar s),
-   GNTLike t (Var s) (Const (NVar s)),
-   GNTLike t (Var s) [],
-   HasLift b t [])
-  => t (Var s)              -- ^ Wrapped varibales to label.
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2 t = optimize2' t (toNVarList t)
-
-optimize2' ::
-  (Stream m,
-   GNTLike t (Var s) [],
-   HasLift b t [])
-  => t (Var s)              -- ^ Wrapped varibales to label.
-  -> [NVar s]
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2' c [] = do
-  d <- gntA c
-  let s = unlift d
-  g <- getConsDeg
-  return $ select $ fmap (,g) s
-optimize2' c (NVar v:vs) = do
-  d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
-      setS v i
-      optimize2' c vs
-  return $ msum s
-
 {-|
->>> runFD testNewOpt :: ([((Int, Bool), RGrade)], FDState, FDLog)
-([((1,False),7 % 10),((1,True),3 % 10),((2,False),3 % 10),((2,True),7 % 10)],FDState {_cnt = 0, _cntVarGet = 19, _cntVarSet = 6, _cntConsDeg = 4},["Initialized.","Terminated."])
+>>> (runFD testNewOpt ^. _1 :: [((Int, Bool), RGrade)]) & mapMOf_ each print
+((1,False),7 % 10)
+((1,True),3 % 10)
+((2,False),3 % 10)
+((2,True),7 % 10)
 -}
 -- Elements stored in wrapped user-defined data
 testNewOpt :: Stream m => FDS s (m ((Int, Bool), RGrade))
 testNewOpt = do
   (TupleV v) <- gntA (TupleV p1)
   add2 "parity" parity (v^._1) (v^._2)
-  optimize2 (TupleV v)
-
-optimize2T ::
-  (Stream m, Traversable t, FDValue a)
-  => t (Var s a)             -- ^ Wrapped varibales to label.
-  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
-optimize2T t = optimize2 (TraversableV t)
+  labelAll (TupleV v)
 
 -- Elements stored in Traversable
 testNewOpt2 :: Stream m => FDS s (m ([Int], RGrade))
@@ -946,264 +1031,11 @@ testNewOpt2 = do
   -- v <- newNL 2 d
   v <- newTL [d, d]
   add2 "dist" dist (v !! 0) (v !! 1)
-  -- optimize2 (TraversableV v)
-  optimize2T v
+  -- labelAll (TraversableV v)
+  labelAllT v
 
 dist :: FR2 Int Int RGrade
 dist (x, y) = if x == y then 0.7 else 0.3
-
-{-
-
--- Types
-
-class Applicative f => HasLift b l f where
-  unlift :: l -> f b
-
--- class (Applicative f, HasNT s t g f, HasLift b t f) =>
---       HasLift'' b s t f g where
---   unlift'' :: (Applicative m, Applicative g) =>
---              (forall a. FDValue a => f a -> m (g a)) -> s -> m (g b)
---   unlift'' f = unlift . ntA f
-
-class HasLift' b l f g p where
-  -- unliftA :: (Applicative m, Applicative g) =>
-  --            (forall a. FDValue a => f a -> m (g a)) -> l -> m (g b)
-  unliftA :: (Applicative m, Applicative g) =>
-             (forall a. p a => f a -> m (g a)) -> l -> m (g b)
-
-class HasNT s t f g p where
-  -- ntA :: Applicative m => (forall a. FDValue a => f a -> m (g a)) -> s -> m t
-  ntA :: Applicative m => (forall a. p a => f a -> m (g a)) -> s -> m t
-  -- nt :: (forall a. FDValue a => f a -> g a) -> s -> t
-  nt :: (forall a. p a => f a -> g a) -> s -> t
-  nt f = runIdentity . ntA (Identity . f)
-
-class ToList t f where
-  toList :: (forall a. FDValue a => f a -> g) -> t -> [g]
-
--- type FDPack b m l t f g = (HasLift b t m, HasNT l t f g, ToList t)
-
--- Instances
-
---   Traversable
-
-instance (Traversable t, Applicative f) => HasLift (t a) (t (f a)) f where
-  unlift t = traverse id t
-
-instance (Traversable t, p a) => HasNT (t (f a)) (t (g a)) f g p where
-  ntA f = traverse f
-
-instance (Traversable t, FDValue a) => ToList (t (f a)) f where
-  toList f t = fmap f (Foldable.toList t)
-
---   Tuple
-
-instance Applicative f => HasLift (a, b) (f a, f b) f where
-  unlift (a, b) = (,) <$> a <*> b
-
--- instance (Applicative f, HasLift (a, b) (g a, g b) g,
---           HasNT (f a, f b) (g a, g b) f g) =>
---          HasLift' (a, b) (f a, f b) f g where
---   unliftA f p = (unlift :: (g a, g b) -> g (a, b)) <$> ntA f p
-
-instance (Applicative f, HasLift (a, b) ([a], [b]) [],
-          HasNT (f a, f b) ([a], [b]) f [] p) =>
-         HasLift' (a, b) (f a, f b) f [] p where
---   unliftA f p = (unlift :: ([a], [b]) -> [(a, b)]) <$> ntA f p
-
-instance (p a, p b) => HasNT (f a, f b) (g a, g b) f g p where
-  ntA f (a, b) = (,) <$> f a <*> f b
-
-instance (FDValue a, FDValue b) => ToList (f a, f b) f where
-  toList f (a, b) = [f a, f b]
-
---   User-defined type
-
-data PT i b = PT { _int :: i, _bool :: b } deriving (Show, Eq)
-makeLenses ''PT
-
-instance Applicative f => HasLift (PT i b) (PT (f i) (f b)) f where
-  unlift (PT i b) = PT <$> i <*> b
-
-instance (HasLift (PT i b) (PT (g i) (g b)) g,
-          HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g p) =>
-         HasLift' (PT i b) (PT (f i) (f b)) f g p where
-  -- unliftA f p = unlift <$> ntA f p
-
-instance (p i, p b) =>
-         HasNT (PT (f i) (f b)) (PT (g i) (g b)) f g p where
-  ntA f (PT i b) = PT <$> f i <*> f b
-
-instance (FDValue i, FDValue b) => ToList (PT (f i) (f b)) f where
-  toList f (PT i b) = [f i, f b]
-
--- Examples
-
-pt1 :: PT [Int] [Bool]
-pt1 = PT [1, 2] [True, False]
-
-pt2 :: PT (Domain Int) (Domain Bool)
-pt2 = PT
-      (Fuzzy.fromList [(1, 0.7), (2, 0.3)])
-      (Fuzzy.fromList [(True, 0.4), (False, 0.6)])
-
-usecase1 :: PT (Maybe Int) (Maybe Bool)
-usecase1 = nt listToMaybe pt1
-
-usecase2 :: FDS s (PT (Var s Int) (Var s Bool))
-usecase2 = ntA newL pt1
-
-usecase3 :: FDS s [PT Int Bool]
-usecase3 = do
-  v <- ntA newL pt1
-  add2 "parity" parity (v^.int) (v^.bool)
-  d <- ntA getL v
-  return $ unlift (d :: PT [Int] [Bool])
-
--- | Optimize given variables and return the captured solutions.
-optimize1
-  :: Stream m
-  => [NVar s]               -- ^ Wrapped varibales to label.
-  -> FDS s (m a)            -- ^ Action to capture variable.
-  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize1 [] capture = do
-  s <- capture
-  g <- getConsDeg
-  return $ fmap (,g) s
-optimize1 (NVar v:vs) capture = do
-  d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
-      setS v i
-      optimize1 vs capture
-  return $ msum s
-
-{-|
->>> (runFD testNewOpt ^. _1 :: [((Int, Bool), RGrade)]) & mapMOf_ each print
-((1,False),7 % 10)
-((1,True),3 % 10)
-((2,False),3 % 10)
-((2,True),7 % 10)
-((3,False),7 % 10)
-((3,True),3 % 10)
--}
-testNewOpt :: Stream m => FDS s (m ((Int, Bool), RGrade))
-testNewOpt = do
-  x <- newL [1, 2, 3]
-  y <- newL [True, False]
-  add2 "parity" parity x y
-  let vs = [NVar x, NVar y]
-  let f = do
-        vx <- getL x  -- TBD: as IsList
-        vy <- getL y
-        return $ (,) <$> select vx <*> select vy
-  optimize1 vs f
-
--- | Optimize given variables and return the captured solutions.
-optimize2
-  :: (Stream m, ToList t (Var s))
-  => t                      -- ^ Wrapped varibales to label.
-  -> FDS s (m a)            -- ^ Action to capture variable.
-  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2 t = optimize2' t (toList NVar t)
-
-optimize2'
-  :: (Stream m)
-  => t                      -- ^ Wrapped varibales to label.
-  -> [NVar s]
-  -> FDS s (m a)            -- ^ Action to capture variable.
-  -> FDS s (m (a, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2' c [] capture = do
-  s <- capture
-  g <- getConsDeg
-  return $ fmap (,g) s
-optimize2' c (NVar v:vs) capture = do
-  d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
-      setS v i
-      optimize2' c vs capture
-  return $ msum s
-
-testNewOpt2 :: Stream m => FDS s (m (PT Int Bool, RGrade))
-testNewOpt2 = do
-  let pd = PT [1::Int, 2, 3] [True, False]
-  pv <- newPL pd
-  add2 "parity" parity (pv^.int) (pv^.bool)
-  let f = do
-        vx <- getL (pv^.int)  -- TBD: as IsList
-        vy <- getL (pv^.bool)
-        return $ PT <$> select vx <*> select vy
-  optimize2 pv f
-
--- | Optimize given variables and return the captured solutions.
-optimize3
-  :: (Stream m, ToList t (Var s), HasLift' b t (Var s) [] FDValue')
-  => t                      -- ^ Wrapped varibales to label.
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize3 t = optimize3' t (toList NVar t)
-
-optimize3'
-  :: (Stream m, HasLift' b t (Var s) [] FDValue')
-  => t                      -- ^ Wrapped varibales to label.
-  -> [NVar s]
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize3' c [] = do
-  s <- unliftA getL c
-  g <- getConsDeg
-  return $ select $ fmap (,g) s
-optimize3' c (NVar v:vs) = do
-  d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
-      setS v i
-      optimize3' c vs
-  return $ msum s
-
-testNewOpt3 :: Stream m => FDS s (m (PT Int Bool, RGrade))
-testNewOpt3 = do
-  let pd = PT [1::Int, 2, 3] [True, False]
-  pv <- newPL pd
-  add2 "parity" parity (pv^.int) (pv^.bool)
-  optimize3 pv
-
--}
-
-{-
-
--- | Optimize given variables and return the captured solutions.
-optimize2
-  :: (Stream m, ToList t (Var s), HasLift' b t (Var s) [])
-  => t                      -- ^ Wrapped varibales to label.
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2 t = optimize2' t (toList NVar t)
-
-optimize2'
-  :: (Stream m, HasLift' b t (Var s) [])
-  => t                      -- ^ Wrapped varibales to label.
-  -> [NVar s]
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize2' c [] = do
-  s <- unliftA getL c
-  g <- getConsDeg
-  return $ select $ fmap (,g) s
-optimize2' c (NVar v:vs) = do
-  d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
-      setS v i
-      optimize2' c vs
-  return $ msum s
-
-testNewOpt2 :: Stream m => FDS s (m ((Int, Bool), RGrade))
-testNewOpt2 = do
-  let pd = ([1::Int, 2, 3], [True, False])
-  pv <- ntA newL pd
-  add2 "parity" parity (fst pv) (snd pv)
---  optimize2 pv
-  return $ select []
-
--}
 
 -- Tests
 
@@ -1217,24 +1049,24 @@ test1FR1 x = case x of 1 -> 0.2
                        2 -> 0.8
                        3 -> 0.5
                        _ -> 0
-test1Best :: FDS s (Maybe [Int], RGrade)
+test1Best :: FDS s [([Int], RGrade)]
 test1Best = test1 >>= optimizeT
-test1All :: FDS s ([[Int]], RGrade)
-test1All  = test1 >>= optimizeAllT
+test1All :: FDS s [([Int], RGrade)]
+test1All  = test1 >>= labelAllT
 
 {-|
 >>> runFD testFCSPBest ^. _1
 (Just [0,2,4,6],4 % 5)
 -}
-testFCSPBest :: FDS s (Maybe [Int], RGrade)
+testFCSPBest :: FDS s [([Int], RGrade)]
 testFCSPBest = testFCSP >>= optimizeT
 
 {-|
 >>> runFD testFCSPAll ^. _1
 ([[0,2,4,6],[1,2,4,6],[1,3,4,6],[1,3,5,6],[1,3,5,7],[2,2,4,6],[2,3,4,6],[2,3,5,6],[2,3,5,7],[2,4,4,6],[2,4,5,6],[2,4,5,7],[2,4,6,6],[2,4,6,7],[2,4,6,8]],4 % 5)
 -}
-testFCSPAll :: FDS s ([[Int]], RGrade)
-testFCSPAll = testFCSP >>= optimizeAllT
+testFCSPAll :: FDS s [([Int], RGrade)]
+testFCSPAll = testFCSP >>= labelAllT
 
 testFCSP :: FDS s [Var s Int]
 testFCSP = do
