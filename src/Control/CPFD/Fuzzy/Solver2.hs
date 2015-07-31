@@ -51,6 +51,7 @@ import           Data.STRef.Lazy        (STRef)
 import           Data.Traversable       (Traversable)
 import           Data.Typeable
 import           Debug.Trace            (traceM)
+import           Data.Dynamic
 import qualified GHC.Exts               as Exts (Constraint)
 
 
@@ -719,6 +720,12 @@ arcCons r x1 x2 d1 d2 = Fuzzy.mu x1 d1 ?& Fuzzy.mu r (d1, d2) ?& Fuzzy.mu x2 d2
 
 -- New API
 
+-- | Data stream
+type Stream m = (MonadPlus m, Applicative m)
+
+select :: Stream m => [a] -> m a
+select = foldr (\x m -> return x `mplus` m) mzero
+
 -- NT-like transformation
 
 class Applicative (NTCxt f g) => NTLike f g where
@@ -741,10 +748,20 @@ instance NTLike [] Maybe where
   type NTCxt [] Maybe = Identity
   ntA = Identity . listToMaybe
 
+instance NTLike f (Const Dynamic) where
+  type NTTyCxt f (Const Dynamic) a = (Typeable f, Typeable a)
+  type NTCxt f (Const Dynamic) = Identity
+  ntA = Identity . Const . toDyn
+
+instance NTLike (Var s) (Const (NVar s)) where
+  type NTTyCxt (Var s) (Const (NVar s)) a = (FDValue a)
+  type NTCxt (Var s) (Const (NVar s)) = Identity
+  ntA = Identity . Const . NVar
+
 -- type class for NT-like in containers
 
 class NTLike f g => GNTLike t f g where
-  gntA :: t f -> (NTCxt f g)(t g)
+  gntA :: t f -> (NTCxt f g) (t g)
 
 newtype TupleV a b f = TupleV { getTupleV :: (f a, f b) } deriving (Show, Eq)
 instance (t ~ TupleV a b f) => Rewrapped (TupleV a b g) t
@@ -759,13 +776,10 @@ instance (NTLike f g, NTTyCxt f g a, NTTyCxt f g b) =>
 
 -- unlifting
 
-class Applicative f => HasLift b l f where
-  unlift :: l -> f b
+class Applicative f => HasLift b t f where
+  unlift :: t f -> f b
 
-instance Applicative f => HasLift (a, b) (f a, f b) f where
-  unlift (a, b) = (,) <$> a <*> b
-
-instance Applicative f => HasLift (a, b) (TupleV a b f) f where
+instance Applicative f => HasLift (a, b) (TupleV a b) f where
   unlift (TupleV (a, b)) = (,) <$> a <*> b
 
 -- to list
@@ -773,8 +787,21 @@ instance Applicative f => HasLift (a, b) (TupleV a b f) f where
 class ToList t f where
   toList :: (forall a. FDValue a => f a -> g) -> t -> [g]
 
-instance (FDValue a, FDValue b) => ToList (f a, f b) f where
-  toList f (a, b) = [f a, f b]
+instance (FDValue a, FDValue b) => ToList (TupleV a b f) f where
+  toList f (TupleV (a, b)) = [f a, f b]
+
+-- to list without context
+
+class ToList' t f g where
+  toList' :: (forall a. f a -> g) -> t f -> [g]
+
+instance ToList' (TupleV a b) f g where
+  toList' f (TupleV (a, b)) = [f a, f b]
+
+toNVarList :: (GNTLike t (Var s) (Const (NVar s)),
+               ToList' t (Const (NVar s)) (NVar s))
+              => t (Var s) -> [NVar s]
+toNVarList = toList' getConst . runIdentity . gntA
 
 -- Examples
 
@@ -800,9 +827,9 @@ usecase3 = do
   (TupleV v) <- gntA (TupleV p1)
   add2 "parity" parity (v^._1) (v^._2)
   (TupleV d) <- gntA (TupleV v)
-  return $ unlift (d :: ([Int], [Bool])) -- unlift from user code
+  return $ unlift (TupleV d) -- unlift from user code
 
-testopt1 :: (Stream m, HasLift b (t []) []) => t [] -> FDS s (m b)
+testopt1 :: (Stream m, HasLift b t []) => t [] -> FDS s (m b)
 testopt1 d = do
   return $ select $ unlift d
 
@@ -819,7 +846,7 @@ usecase4 = do
   return $ concatMap unlift ds
 
 testopt :: forall s m t b.
-           (Stream m, GNTLike t (Var s) [], HasLift b (t []) [])
+           (Stream m, GNTLike t (Var s) [], HasLift b t [])
            => t (Var s) -> FDS s (m b)
 testopt l = do
   d <- gntA l :: FDS s (t [])
@@ -835,44 +862,54 @@ usecase5 = do
 parity :: FR2 Int Bool RGrade
 parity (i, b) = if (i `mod` 2 == 0) == b then 0.7 else 0.3
 
--- | Data stream
-type Stream m = (MonadPlus m, Applicative m)
+{-|
+>>> testToList'
+[<<[Int]>>,<<[Bool]>>]
+-}
+testToList' :: [Dynamic]
+testToList' = toList' getConst . runIdentity . gntA $ TupleV p1
 
-select :: Stream m => [a] -> m a
-select = foldr (\x m -> return x `mplus` m) mzero
 
-{-
 -- | Optimize given variables and return the captured solutions.
-optimize3
-  :: (Stream m, ToList t (Var s), HasLift' b t (Var s) [] FDValue')
-  => t                      -- ^ Wrapped varibales to label.
+optimize2 ::
+  (Stream m,
+   ToList' t (Const (NVar s)) (NVar s),
+   GNTLike t (Var s) (Const (NVar s)),
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => t (Var s)              -- ^ Wrapped varibales to label.
   -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize3 t = optimize3' t (toList NVar t)
+optimize2 t = optimize2' t (toNVarList t)
 
-optimize3'
-  :: (Stream m, HasLift' b t (Var s) [] FDValue')
-  => t                      -- ^ Wrapped varibales to label.
+optimize2' ::
+  (Stream m,
+   GNTLike t (Var s) [],
+   HasLift b t [])
+  => t (Var s)              -- ^ Wrapped varibales to label.
   -> [NVar s]
   -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize3' c [] = do
-  s <- unliftA getL c
+optimize2' c [] = do
+  d <- gntA c
+  let s = unlift d
   g <- getConsDeg
   return $ select $ fmap (,g) s
-optimize3' c (NVar v:vs) = do
+optimize2' c (NVar v:vs) = do
   d <- getL v
   s <- forM d $ \i -> do
     local $ do
       setS v i
-      optimize3' c vs
+      optimize2' c vs
   return $ msum s
 
-testNewOpt3 :: Stream m => FDS s (m (PT Int Bool, RGrade))
-testNewOpt3 = do
-  let pd = PT [1::Int, 2, 3] [True, False]
-  pv <- newPL pd
-  add2 "parity" parity (pv^.int) (pv^.bool)
-  optimize3 pv
+{-|
+>>> runFD testNewOpt :: ([((Int, Bool), RGrade)], FDState, FDLog)
+([((1,False),7 % 10),((1,True),3 % 10),((2,False),3 % 10),((2,True),7 % 10)],FDState {_cnt = 0, _cntVarGet = 19, _cntVarSet = 6, _cntConsDeg = 4},["Initialized.","Terminated."])
 -}
+testNewOpt :: Stream m => FDS s (m ((Int, Bool), RGrade))
+testNewOpt = do
+  (TupleV v) <- gntA (TupleV p1)
+  add2 "parity" parity (v^._1) (v^._2)
+  optimize2 (TupleV v)
 
 {-
 
