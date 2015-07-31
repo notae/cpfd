@@ -774,6 +774,18 @@ instance (NTLike f g, NTTyCxt f g a, NTTyCxt f g b) =>
          GNTLike (TupleV a b) f g where
   gntA (TupleV (a, b)) = TupleV <$> ((,) <$> ntA a <*> ntA b)
 
+newtype TraversableV t a f = TraversableV { getTraversableV :: t (f a) }
+                           deriving (Show, Eq)
+instance (t' ~ TraversableV t a f) => Rewrapped (TraversableV t a g) t'
+instance Wrapped (TraversableV t a f) where
+  type Unwrapped (TraversableV t a f) = t (f a)
+  _Wrapped' = iso getTraversableV TraversableV
+  {-# INLINE _Wrapped' #-}
+
+instance (NTLike f g, NTTyCxt f g a, Traversable t) =>
+         GNTLike (TraversableV t a) f g where
+  gntA (TraversableV t) = TraversableV <$> traverse ntA t
+
 -- unlifting
 
 class Applicative f => HasLift b t f where
@@ -781,6 +793,10 @@ class Applicative f => HasLift b t f where
 
 instance Applicative f => HasLift (a, b) (TupleV a b) f where
   unlift (TupleV (a, b)) = (,) <$> a <*> b
+
+instance (Applicative f, Traversable t) =>
+         HasLift (t a) (TraversableV t a) f where
+  unlift (TraversableV t) = traverse id t
 
 -- to list
 
@@ -797,6 +813,9 @@ class ToList' t f g where
 
 instance ToList' (TupleV a b) f g where
   toList' f (TupleV (a, b)) = [f a, f b]
+
+instance Traversable t => ToList' (TraversableV t a) f g where
+  toList' f (TraversableV t) = Foldable.toList $ fmap f t
 
 toNVarList :: (GNTLike t (Var s) (Const (NVar s)),
                ToList' t (Const (NVar s)) (NVar s))
@@ -905,11 +924,33 @@ optimize2' c (NVar v:vs) = do
 >>> runFD testNewOpt :: ([((Int, Bool), RGrade)], FDState, FDLog)
 ([((1,False),7 % 10),((1,True),3 % 10),((2,False),3 % 10),((2,True),7 % 10)],FDState {_cnt = 0, _cntVarGet = 19, _cntVarSet = 6, _cntConsDeg = 4},["Initialized.","Terminated."])
 -}
+-- Elements stored in wrapped user-defined data
 testNewOpt :: Stream m => FDS s (m ((Int, Bool), RGrade))
 testNewOpt = do
   (TupleV v) <- gntA (TupleV p1)
   add2 "parity" parity (v^._1) (v^._2)
   optimize2 (TupleV v)
+
+optimize2T ::
+  (Stream m, Traversable t, FDValue a)
+  => t (Var s a)             -- ^ Wrapped varibales to label.
+  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
+optimize2T t = optimize2 (TraversableV t)
+
+-- Elements stored in Traversable
+testNewOpt2 :: Stream m => FDS s (m ([Int], RGrade))
+testNewOpt2 = do
+  let d = [1, 2, 3, 4, 5]
+  -- (TraversableV v) <- gntA (TraversableV [d,d])
+  -- v <- traverse newL [d, d]
+  -- v <- newNL 2 d
+  v <- newTL [d, d]
+  add2 "dist" dist (v !! 0) (v !! 1)
+  -- optimize2 (TraversableV v)
+  optimize2T v
+
+dist :: FR2 Int Int RGrade
+dist (x, y) = if x == y then 0.7 else 0.3
 
 {-
 
