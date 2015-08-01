@@ -85,7 +85,8 @@ exFCSPCons = do
 
 @[3,3,1]@ is the best solution with satisfaction grade @7 % 10@.
 -}
-exFCSPBest = exFCSPCons >>= optimize
+exFCSPBest :: FDS s ([[Int]], RGrade)
+exFCSPBest = exFCSPCons >>= optimizeT
 
 {-|
 >>> runFD exFCSPAll
@@ -93,7 +94,8 @@ exFCSPBest = exFCSPCons >>= optimize
 
 @[3,3,1]@ is the best solution with satisfaction grade @7 % 10@.
 -}
-exFCSPAll = exFCSPCons >>= optimize
+exFCSPAll :: FDS s ([[Int]], RGrade)
+exFCSPAll = exFCSPCons >>= optimizeT
 
 a0, a1, a2, a3, a4 :: RGrade
 [a0, a1, a2, a3, a4] = [0, 0.3, 0.5, fnot a1, 1]

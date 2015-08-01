@@ -913,12 +913,12 @@ labelT bInf t = label bInf (TraversableV t)
 
 data OptState m b =
   OptState
-  { _optSol :: m (b, RGrade)
+  { _optSol :: m b
   , _optBoundInf :: RGrade
   , _optBoundSup :: RGrade
-  }
+  } deriving (Show)
 
-deriving instance (Show (m (b, RGrade))) => Show (OptState m b)
+-- deriving instance (Show (m (b, RGrade))) => Show (OptState m b)
 
 makeLenses ''OptState
 
@@ -933,10 +933,10 @@ optimize ::
    GNTLike t (Var s) [],
    HasLift b t [])
   => t (Var s)              -- ^ Wrapped varibales to label.
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
+  -> FDS s (m b, RGrade)  -- ^ Stream of solutions with satisfaction grade.
 optimize t = do
   state <- optimize' initOptState t (toNVarList t)
-  return $ state^.optSol
+  return $ (state^.optSol, state^.optBoundInf)
 
 optimize' ::
   (Stream m,
@@ -951,9 +951,9 @@ optimize' state c [] = do
   let sol = unlift d
   g <- getConsDeg
   let state' = case g `compare` (state ^. optBoundInf) of
-        GT -> state { _optSol = select $ fmap (,g) sol
+        GT -> state { _optSol = select sol
                     , _optBoundInf = g }
-        EQ -> state & optSol %~ (`mplus` select (fmap (,g) sol))
+        EQ -> state & optSol %~ (`mplus` select sol)
         LT -> state
   return state'
 optimize' state c (NVar v:vs) = do
@@ -970,7 +970,7 @@ optimize' state c (NVar v:vs) = do
 optimizeT ::
   (Stream m, Traversable t, FDValue a)
   => t (Var s a)             -- ^ Wrapped varibales to label.
-  -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
+  -> FDS s (m (t a), RGrade) -- ^ Stream of solutions with satisfaction grade.
 optimizeT t = optimize (TraversableV t)
 
 -- Examples
@@ -1081,7 +1081,7 @@ test1FR1 x = case x of 1 -> 0.2
                        2 -> 0.8
                        3 -> 0.5
                        _ -> 0
-test1Best :: FDS s [([Int], RGrade)]
+test1Best :: FDS s ([[Int]], RGrade)
 test1Best = test1 >>= optimizeT
 test1All :: FDS s [([Int], RGrade)]
 test1All  = test1 >>= labelAllT
@@ -1090,15 +1090,15 @@ test1All  = test1 >>= labelAllT
 >>> runFD testFCSPBest ^. _1
 (Just [0,2,4,6],4 % 5)
 -}
-testFCSPBest :: FDS s [([Int], RGrade)]
+testFCSPBest :: FDS s (Maybe [Int], RGrade)
 testFCSPBest = testFCSP >>= optimizeT
 
 {-|
 >>> runFD testFCSPAll ^. _1
 ([[0,2,4,6],[1,2,4,6],[1,3,4,6],[1,3,5,6],[1,3,5,7],[2,2,4,6],[2,3,4,6],[2,3,5,6],[2,3,5,7],[2,4,4,6],[2,4,5,6],[2,4,5,7],[2,4,6,6],[2,4,6,7],[2,4,6,8]],4 % 5)
 -}
-testFCSPAll :: FDS s [([Int], RGrade)]
-testFCSPAll = testFCSP >>= labelAllT
+testFCSPAll :: FDS s ([[Int]], RGrade)
+testFCSPAll = testFCSP >>= optimizeT
 
 testFCSP :: FDS s [Var s Int]
 testFCSP = do
