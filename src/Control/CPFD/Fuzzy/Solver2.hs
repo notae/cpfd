@@ -16,6 +16,7 @@
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Control.CPFD.Fuzzy.Solver2
        (
@@ -887,13 +888,18 @@ label' bInf c [] = do
   d <- gntA c
   let s = unlift d
   g <- getConsDeg
-  return $ select $ fmap (,g) s
+  if g >= bInf
+  then return $ select $ fmap (,g) s
+  else return $ mzero
 label' bInf c (NVar v:vs) = do
   d <- getL v
   s <- forM d $ \i -> do
     local $ do
       setS v i
-      label' bInf c vs
+      g <- getConsDeg
+      if g >= bInf
+      then label' bInf c vs
+      else return mzero
   return $ msum s
 
 labelT ::
@@ -902,6 +908,22 @@ labelT ::
   -> t (Var s a)             -- ^ Wrapped varibales to label.
   -> FDS s (m (t a, RGrade)) -- ^ Stream of solutions with satisfaction grade.
 labelT bInf t = label bInf (TraversableV t)
+
+-- Optimize
+
+data OptState m b =
+  OptState
+  { _optSol :: m (b, RGrade)
+  , _optBoundInf :: RGrade
+  , _optBoundSup :: RGrade
+  }
+
+deriving instance (Show (m (b, RGrade))) => Show (OptState m b)
+
+makeLenses ''OptState
+
+initOptState :: MonadPlus m => OptState m b
+initOptState = OptState mzero minBound maxBound
 
 -- | Optimize given variables and return the captured solutions.
 optimize ::
@@ -912,28 +934,38 @@ optimize ::
    HasLift b t [])
   => t (Var s)              -- ^ Wrapped varibales to label.
   -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize t = optimize' minBound t (toNVarList t)
+optimize t = do
+  state <- optimize' initOptState t (toNVarList t)
+  return $ state^.optSol
 
 optimize' ::
   (Stream m,
    GNTLike t (Var s) [],
    HasLift b t [])
-  => RGrade                 -- ^ Current inferior bound
+  => OptState m b           -- ^ Current optimization state
   -> t (Var s)              -- ^ Wrapped varibales to label.
   -> [NVar s]
-  -> FDS s (m (b, RGrade))  -- ^ Stream of solutions with satisfaction grade.
-optimize' bInf c [] = do
+  -> FDS s (OptState m b)   -- ^ Last optimization state.
+optimize' state c [] = do
   d <- gntA c
-  let s = unlift d
+  let sol = unlift d
   g <- getConsDeg
-  return $ select $ fmap (,g) s
-optimize' bInf c (NVar v:vs) = do
+  let state' = case g `compare` (state ^. optBoundInf) of
+        GT -> state { _optSol = select $ fmap (,g) sol
+                    , _optBoundInf = g }
+        EQ -> state & optSol %~ (`mplus` select (fmap (,g) sol))
+        LT -> state
+  return state'
+optimize' state c (NVar v:vs) = do
   d <- getL v
-  s <- forM d $ \i -> do
-    local $ do
+  foldM f state d
+  where
+    f s i = local $ do
       setS v i
-      optimize' bInf c vs
-  return $ msum s
+      g <- getConsDeg
+      if g >= s ^. optBoundInf
+      then optimize' s c vs
+      else return s
 
 optimizeT ::
   (Stream m, Traversable t, FDValue a)
